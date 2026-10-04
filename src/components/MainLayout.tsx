@@ -12,7 +12,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 pt-4 pb-28 sm:py-8 sm:px-6">
+    <main className="relative z-10 mx-auto max-w-6xl px-4 pt-4 pb-28 sm:py-8 sm:px-6">
       {children}
     </main>
   );

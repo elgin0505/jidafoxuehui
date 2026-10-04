@@ -5,13 +5,42 @@ import { syncUserToGoogleSheet } from "@/lib/googleSheetsSync";
 import { createSessionToken } from "@/lib/auth";
 
 /**
+ * 临时数据库网络抖动 / 连接池冷启动重试辅助函数
+ */
+async function withDbRetry<T>(operation: () => Promise<T>, maxRetries = 2, delayMs = 600): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (err: any) {
+      lastError = err;
+      const isTransientConnectionError =
+        err?.code === "P1001" ||
+        err?.message?.includes("Can't reach database server") ||
+        err?.message?.includes("connection pool") ||
+        err?.message?.includes("timeout");
+
+      if (isTransientConnectionError && attempt < maxRetries - 1) {
+        console.warn(`[DB Retry] 遇到数据库暂时连接抖动，等待 ${delayMs}ms 后重试 (尝试 ${attempt + 1}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
+/**
  * 安全生成下一个会员编号 (例如 FXH0001, FXH0002)
  * 遍历现有 memberId 取最大数值并递增，避免 count() 在高并发下生成重复编号
  */
 async function generateNextMemberId(): Promise<string> {
-  const members = await prisma.member.findMany({
-    select: { memberId: true },
-  });
+  const members = await withDbRetry(() =>
+    prisma.member.findMany({
+      select: { memberId: true },
+    })
+  );
 
   let maxNum = 0;
   for (const m of members) {
@@ -52,10 +81,12 @@ export async function POST(request: Request) {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // 1. 检查邮箱是否已存在
-    const existingUser = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
+    // 1. 检查邮箱是否已存在 (配合连接重试机制避免冷启动失败)
+    const existingUser = await withDbRetry(() =>
+      prisma.user.findUnique({
+        where: { email: normalizedEmail },
+      })
+    );
 
     if (existingUser) {
       return NextResponse.json(
@@ -69,15 +100,17 @@ export async function POST(request: Request) {
     const parsedBirthday = birthday ? new Date(birthday) : null;
 
     // 3. 创建独立 User 登录账户
-    const user = await prisma.user.create({
-      data: {
-        name: name.trim(),
-        email: normalizedEmail,
-        passwordHash,
-        birthday: parsedBirthday,
-        role: userRole,
-      },
-    });
+    const user = await withDbRetry(() =>
+      prisma.user.create({
+        data: {
+          name: name.trim(),
+          email: normalizedEmail,
+          passwordHash,
+          birthday: parsedBirthday,
+          role: userRole,
+        },
+      })
+    );
 
     // 4. 创建关联的 Member 会员档案，附带自愈重试机制
     let member = null;
@@ -85,17 +118,19 @@ export async function POST(request: Request) {
     while (!member && attempts < 3) {
       try {
         const memberId = await generateNextMemberId();
-        member = await prisma.member.create({
-          data: {
-            memberId,
-            name: name.trim(),
-            email: normalizedEmail,
-            birthday: parsedBirthday,
-            role: userRole,
-            totalPoints: 0,
-            userId: user.id,
-          },
-        });
+        member = await withDbRetry(() =>
+          prisma.member.create({
+            data: {
+              memberId,
+              name: name.trim(),
+              email: normalizedEmail,
+              birthday: parsedBirthday,
+              role: userRole,
+              totalPoints: 0,
+              userId: user.id,
+            },
+          })
+        );
       } catch (err: any) {
         attempts++;
         if (attempts >= 3) throw err;
@@ -153,8 +188,21 @@ export async function POST(request: Request) {
     return response;
   } catch (error: any) {
     console.error("注册 API 发生严重错误:", error);
+
+    const isDbConnectionError =
+      error?.code === "P1001" ||
+      error?.message?.includes("Can't reach database server") ||
+      error?.message?.includes("database server is running") ||
+      error?.message?.includes("invocation");
+
+    const userFriendlyError = isDbConnectionError
+      ? "数据库连接繁忙或服务正在唤醒中，请稍候几秒后重新点击创建"
+      : (error?.message && !error.message.includes("prisma") && !error.message.includes("invocation") && !error.message.includes("database server")
+          ? error.message
+          : "注册失败，请稍后重试");
+
     return NextResponse.json(
-      { error: error?.message || "注册失败，请稍后重试" },
+      { error: userFriendlyError },
       { status: 500 }
     );
   }

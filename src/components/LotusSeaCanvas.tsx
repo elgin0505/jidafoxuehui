@@ -412,12 +412,29 @@ const LampScene: React.FC<LampSceneProps> = ({
     (controls: CameraControls | null) => {
       cameraControlsRef.current = controls;
       if (controls) {
-        controls.setLookAt(0, 10, 18, 0, 0, 0, false);
+        if (isMobile) {
+          // 移动端黄金纵向画幅：微调仰角与拉远纵深，让上方苍穹天体与下方莲池金环完美同框
+          controls.setLookAt(0, 11.5, 25, 0, 2.0, -5, false);
+        } else {
+          controls.setLookAt(0, 10, 18, 0, 0, 0, false);
+        }
         controls.saveState();
       }
     },
-    [cameraControlsRef]
+    [cameraControlsRef, isMobile]
   );
+
+  // 监听设备切换或屏幕方向自适应更新视角锚点
+  useEffect(() => {
+    if (cameraControlsRef.current && !isZoomed) {
+      if (isMobile) {
+        cameraControlsRef.current.setLookAt(0, 11.5, 25, 0, 2.0, -5, false);
+      } else {
+        cameraControlsRef.current.setLookAt(0, 10, 18, 0, 0, 0, false);
+      }
+      cameraControlsRef.current.saveState();
+    }
+  }, [isMobile, isZoomed, cameraControlsRef]);
 
   // 光源裁剪：每 0.5 秒计算最近 10 盏灯开启点光源
   useFrame(({ clock }) => {
@@ -643,13 +660,13 @@ const LampScene: React.FC<LampSceneProps> = ({
       {/* 空间金光粒子 */}
       <Sparkles count={250} scale={30} size={2} speed={0.2} color="#FBBF24" opacity={0.6} />
 
-      {/* 苍穹高能螺旋离子日轮（IonSun 天体发光特效）：移动端 8,000 粒子精细呈现，同时确保 60fps 顺畅 */}
+      {/* 苍穹高能螺旋离子日轮（IonSun 天体发光特效）：移动端 16,000 粒子极致绚烂呈现，配合高能发光内核与 Bloom 绽放 */}
       <IonSun
         position={[0, 8, -38]}
         rotation={[0.35, 0, 0.15]}
-        coreRadius={3.5}
+        coreRadius={isMobile ? 4.0 : 3.5}
         maxRadius={16}
-        particleCount={isMobile ? 8000 : 30000}
+        particleCount={isMobile ? 16000 : 30000}
         spiralArms={3}
       />
 
@@ -963,13 +980,18 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
     <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <Canvas
         shadows={!isMobile}
-        camera={{ position: [0, 10, 18], fov: 50, near: 0.1, far: 200 }}
+        camera={{
+          position: isMobile ? [0, 11.5, 25] : [0, 10, 18],
+          fov: isMobile ? 58 : 50,
+          near: 0.1,
+          far: 200,
+        }}
         dpr={isMobile ? [1, 1.5] : [1, 2]}
         frameloop={!isVisible ? 'demand' : 'always'}
         gl={{
           powerPreference: "high-performance",
           antialias: true,
-          precision: isMobile ? "mediump" : "highp",
+          precision: "highp",
           alpha: true,
           preserveDrawingBuffer: false,
         }}
@@ -994,14 +1016,17 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
             handlePray={handlePray}
             isMobile={isMobile}
           />
-          {/* 移动端物理隔离后期滤镜，释放 150MB+ 双重缓冲显存以防闪退 */}
-          {!isMobile && (
-            <EffectComposer>
-              <Bloom luminanceThreshold={0.95} mipmapBlur intensity={1.4} radius={0.7} />
-              <Vignette eskil={false} offset={0.12} darkness={0.85} />
-              <Noise opacity={0.02} />
-            </EffectComposer>
-          )}
+          {/* 移动端与桌面端全量启用极致禅意光晕，移动端针对性关闭多重抗锯齿以确保丝滑 60fps */}
+          <EffectComposer multisampling={isMobile ? 0 : 4}>
+            <Bloom
+              luminanceThreshold={isMobile ? 0.88 : 0.95}
+              mipmapBlur
+              intensity={isMobile ? 1.5 : 1.4}
+              radius={isMobile ? 0.65 : 0.7}
+            />
+            {!isMobile && <Vignette eskil={false} offset={0.12} darkness={0.85} />}
+            {!isMobile && <Noise opacity={0.02} />}
+          </EffectComposer>
         </Suspense>
       </Canvas>
 
@@ -1032,39 +1057,12 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
           left: '16px',
           right: '16px',
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           pointerEvents: 'none',
           zIndex: 50,
         }}
       >
-        {/* 左侧：退出 / 返回按钮 */}
-        {onClose ? (
-          <button
-            onClick={onClose}
-            style={{
-              pointerEvents: 'auto',
-              backgroundColor: 'rgba(20, 20, 20, 0.75)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              color: '#FFFFFF',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              borderRadius: '9999px',
-              padding: '8px 16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <span>←</span> 退出供灯
-          </button>
-        ) : <div />}
-
         {/* 右侧：缩放状态下的快速复位按钮 */}
         {isZoomed && (
           <button

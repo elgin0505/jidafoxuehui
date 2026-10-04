@@ -4,7 +4,7 @@ import { PageWrapper } from "@/components/PageWrapper";
 import { verifySessionToken } from "@/lib/auth";
 import DashboardClient from "./DashboardClient";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "会员仪表板 · 技大佛学会",

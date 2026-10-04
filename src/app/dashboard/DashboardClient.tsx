@@ -791,6 +791,7 @@ export default function DashboardClient({
             <div className="relative w-full h-full sm:w-[95vw] sm:max-w-5xl sm:h-[85vh] overflow-hidden rounded-none sm:rounded-3xl border-0 sm:border border-golden-deep/40 shadow-[0_0_50px_rgba(201,162,39,0.15)] bg-[#050505]">
               {/* 右上角关闭按钮（带清晰退出标签与点击区域） */}
               <button
+                type="button"
                 onClick={() => setShowLotusCanvas(false)}
                 className="absolute right-4 top-[calc(1rem+env(safe-area-inset-top,0px))] z-50 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-2 text-xs font-semibold text-white/90 backdrop-blur-md transition-all hover:bg-carmine/80 hover:text-white cursor-pointer border border-white/20 shadow-lg active:scale-95"
                 title="退出供灯"
@@ -806,7 +807,7 @@ export default function DashboardClient({
               <div className="absolute left-1/2 top-[calc(1.1rem+env(safe-area-inset-top,0px))] z-40 -translate-x-1/2 rounded-full bg-black/50 px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs tracking-wider sm:tracking-widest text-golden-rich backdrop-blur-md max-w-[calc(100vw-12rem)] truncate sm:max-w-none pointer-events-none">
                 双击水面缩放 · 点击心灯功德+1
               </div>
-              
+
               <LotusSeaCanvas 
                 currentUserId={currentMember?.id || "user-me"}
                 currentUserName={currentMember?.name ?? "同修"}

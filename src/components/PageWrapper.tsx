@@ -225,9 +225,9 @@ const BgComponents: Record<PageTheme, () => ReactElement> = {
 export function PageWrapper({ page, children }: PageWrapperProps) {
   const Bg = BgComponents[page];
   return (
-    <div className="relative">
+    <div className="relative z-0 isolate min-h-full">
       <Bg />
-      <div className="relative z-10">{children}</div>
+      <div className="relative z-10 w-full">{children}</div>
     </div>
   );
 }
