@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { syncEventsFromGoogleSheet } from "@/lib/googleSheets";
 import { verifyAdminPin } from "@/lib/adminAuth";
 
+export const revalidate = 60;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const forceSync = searchParams.get("sync") === "true";

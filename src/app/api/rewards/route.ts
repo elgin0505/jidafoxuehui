@@ -4,6 +4,8 @@ import { logRedemptionToGoogleSheet, syncRewardsFromGoogleSheet, updateRewardSto
 import { requireAuth } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/adminAuth";
 
+export const revalidate = 60;
+
 function deduplicateRewards(rewards: any[]) {
   const unique: any[] = [];
   const seen = new Set<string>();
