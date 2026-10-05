@@ -7,6 +7,8 @@ import { PageWrapper } from "@/components/PageWrapper";
 import { motion } from "framer-motion";
 import { RewardsStore } from "@/components/RewardsStore";
 
+import { getCachedRewards, setCachedRewards } from "@/lib/eventsCache";
+
 interface Reward {
   id: string;
   name: string;
@@ -18,10 +20,12 @@ interface Reward {
 
 export default function RewardsPage() {
   const { currentMember, refreshMembers } = useMember();
-  const [rewards, setRewards] = useState<Reward[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ⚡ 0ms 秒开：优先读取已有的内存/会话缓存，首屏即时展示礼品卡片
+  const [rewards, setRewards] = useState<Reward[]>(() => (getCachedRewards() as Reward[]) || []);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedRewards()?.length);
 
   useEffect(() => {
+    let isMounted = true;
     fetch("/api/rewards")
       .then((res) => res.json())
       .then((data) => {
@@ -34,15 +38,23 @@ export default function RewardsPage() {
             uniqueList.push(item);
           }
         }
-        setRewards(uniqueList);
+        if (isMounted && uniqueList.length > 0) {
+          setRewards(uniqueList);
+          setCachedRewards(uniqueList);
+        }
       })
       .catch((err) => {
         console.error("Failed to load rewards:", err);
-        setRewards([]);
       })
       .finally(() => {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleRedeem = async (reward: Reward, quantity = 1) => {

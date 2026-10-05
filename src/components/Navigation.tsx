@@ -50,6 +50,7 @@ export function Navigation() {
                 <Link
                   key={href}
                   href={href}
+                  prefetch={true}
                   className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
                     isActive
                       ? "bg-golden-deep/10 text-golden-rich"
@@ -89,6 +90,7 @@ export function Navigation() {
             <Link
               key={href}
               href={href}
+              prefetch={true}
               className="mobile-nav-item relative flex flex-1 flex-col items-center justify-center gap-0.5 py-2.5 select-none transition-colors"
               style={{ WebkitTapHighlightColor: "transparent", minHeight: "56px" }}
             >

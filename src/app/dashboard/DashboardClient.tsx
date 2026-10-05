@@ -23,6 +23,7 @@ import { toast as sonnerToast } from "sonner";
 import { Camera } from "lucide-react";
 import { LivingBodhiTree } from "@/components/LivingBodhiTree";
 import type { LotusSeaCanvasProps } from "@/components/LotusSeaCanvas";
+import { setCachedEvents } from "@/lib/eventsCache";
 
 // 按需异步代码分割：非首屏重型弹窗、扫码库与背景画布
 const LotusSeaCanvas = dynamic<LotusSeaCanvasProps>(() => import("@/components/LotusSeaCanvas"), { ssr: false });
@@ -138,6 +139,7 @@ export default function DashboardClient({
       .then((data) => {
         if (Array.isArray(data)) {
           setLiveEventsCount(data.length);
+          setCachedEvents(data);
         }
       })
       .catch(() => setLiveEventsCount(0));

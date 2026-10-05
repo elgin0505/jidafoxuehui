@@ -436,12 +436,24 @@ async function fetchSheetCsv(sheetName: string, gid?: string): Promise<string[][
   return [];
 }
 
-// ── 短时内存缓存机制 (TTL: 30 秒)，大幅降低高并发下 Google API 的网络延迟与请求开销 ──
+// ── 内存缓存与并发保护机制 (TTL: 5 分钟)，大幅降低 Google API 网络延迟与并发开销 ──
 let lastEventsFetchTime = 0;
 let lastRewardsFetchTime = 0;
-const CACHE_TTL_MS = 30 * 1000; // 30 秒
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 分钟
+
+let inFlightSyncEventsPromise: Promise<any> | null = null;
 
 export async function syncEventsFromGoogleSheet(forceRefresh = false) {
+  if (inFlightSyncEventsPromise) {
+    return inFlightSyncEventsPromise;
+  }
+  inFlightSyncEventsPromise = executeSyncEvents(forceRefresh).finally(() => {
+    inFlightSyncEventsPromise = null;
+  });
+  return inFlightSyncEventsPromise;
+}
+
+async function executeSyncEvents(forceRefresh = false) {
   const now = Date.now();
 
   // 1. 如果在缓存有效期内且非强制刷新，直接从本地数据库秒级返回

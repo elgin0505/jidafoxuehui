@@ -4,32 +4,73 @@ import { logRedemptionToGoogleSheet, syncRewardsFromGoogleSheet, updateRewardSto
 import { requireAuth } from "@/lib/auth";
 import { verifyAdminPin } from "@/lib/adminAuth";
 
-export async function GET() {
-  try {
-    const rewards = await syncRewardsFromGoogleSheet();
-    const unique: any[] = [];
-    const seen = new Set<string>();
-    for (const r of (Array.isArray(rewards) ? rewards : [])) {
-      if (!seen.has(r.name)) {
-        seen.add(r.name);
-        unique.push(r);
-      }
+function deduplicateRewards(rewards: any[]) {
+  const unique: any[] = [];
+  const seen = new Set<string>();
+  for (const r of (Array.isArray(rewards) ? rewards : [])) {
+    if (r && r.name && !seen.has(r.name)) {
+      seen.add(r.name);
+      unique.push(r);
     }
-    return NextResponse.json(unique);
-  } catch (error) {
-    console.error("Failed to fetch rewards:", error);
-    const fallbackRewards = await prisma.reward.findMany({
+  }
+  return unique;
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const forceSync = searchParams.get("sync") === "true";
+
+  try {
+    // 1. 强制同步模式（管理员手动刷新或 Webhook 触发）
+    if (forceSync) {
+      const syncedRewards = await syncRewardsFromGoogleSheet(true);
+      return NextResponse.json(deduplicateRewards(syncedRewards), {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
+    }
+
+    // 2. ⚡ 极速快读路径：优先从本地数据库直读，耗时 ~20-50ms，彻底消除 8 秒的同步阻塞
+    const dbRewards = await prisma.reward.findMany({
       orderBy: { pointsRequired: "asc" },
     });
-    const uniqueFallback: any[] = [];
-    const seen = new Set<string>();
-    for (const r of fallbackRewards) {
-      if (!seen.has(r.name)) {
-        seen.add(r.name);
-        uniqueFallback.push(r);
-      }
+
+    // 3. 本地数据库为空时兜底冷启动同步
+    if (dbRewards.length === 0) {
+      const syncedRewards = await syncRewardsFromGoogleSheet(false);
+      return NextResponse.json(deduplicateRewards(syncedRewards), {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=86400",
+        },
+      });
     }
-    return NextResponse.json(uniqueFallback);
+
+    // 4. 非阻塞后台静默刷新：不阻塞当前用户的响应
+    syncRewardsFromGoogleSheet(false).catch((err) => {
+      console.warn("Background rewards sync notice:", err?.message || err);
+    });
+
+    // 5. 立即秒级返回数据，并附加 Vercel Edge CDN 缓存头
+    return NextResponse.json(deduplicateRewards(dbRewards), {
+      headers: {
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=86400",
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch rewards:", error);
+    try {
+      const fallbackRewards = await prisma.reward.findMany({
+        orderBy: { pointsRequired: "asc" },
+      });
+      return NextResponse.json(deduplicateRewards(fallbackRewards), {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=86400",
+        },
+      });
+    } catch {
+      return NextResponse.json([]);
+    }
   }
 }
 

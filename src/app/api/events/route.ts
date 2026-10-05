@@ -3,16 +3,61 @@ import { prisma } from "@/lib/prisma";
 import { syncEventsFromGoogleSheet } from "@/lib/googleSheets";
 import { verifyAdminPin } from "@/lib/adminAuth";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const forceSync = searchParams.get("sync") === "true";
+
   try {
-    const events = await syncEventsFromGoogleSheet();
-    return NextResponse.json(events);
-  } catch (error) {
-    console.error("Failed to fetch events:", error);
-    const fallbackEvents = await prisma.event.findMany({
+    // 1. 强制同步模式（管理员手动刷新或 Webhook 触发）
+    if (forceSync) {
+      const syncedEvents = await syncEventsFromGoogleSheet(true);
+      return NextResponse.json(syncedEvents, {
+        headers: {
+          "Cache-Control": "no-store, max-age=0",
+        },
+      });
+    }
+
+    // 2. ⚡ 极速快读路径：优先从本地数据库直读，耗时 ~20-50ms，彻底消除 13 秒的同步阻塞
+    const dbEvents = await prisma.event.findMany({
       orderBy: { dateTime: "asc" },
     });
-    return NextResponse.json(fallbackEvents);
+
+    // 3. 本地数据库为空时兜底冷启动同步
+    if (dbEvents.length === 0) {
+      const syncedEvents = await syncEventsFromGoogleSheet(false);
+      return NextResponse.json(syncedEvents, {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=86400",
+        },
+      });
+    }
+
+    // 4. 非阻塞后台静默刷新：不阻塞当前用户的响应
+    syncEventsFromGoogleSheet(false).catch((err) => {
+      console.warn("Background events sync notice:", err?.message || err);
+    });
+
+    // 5. 立即秒级返回数据，并附加 Vercel Edge CDN 缓存头
+    return NextResponse.json(dbEvents, {
+      headers: {
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=86400",
+      },
+    });
+  } catch (error) {
+    console.error("Failed to fetch events:", error);
+    try {
+      const fallbackEvents = await prisma.event.findMany({
+        orderBy: { dateTime: "asc" },
+      });
+      return NextResponse.json(fallbackEvents, {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=86400",
+        },
+      });
+    } catch {
+      return NextResponse.json([]);
+    }
   }
 }
 

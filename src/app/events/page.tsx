@@ -1,15 +1,25 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { PageHeader, EmptyState } from '@/components/ui';
 import { PageWrapper } from '@/components/PageWrapper';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  InteractivePaperCalendar,
-  CalendarEvent,
-  DEFAULT_CALENDAR_EVENTS,
-} from '@/components/InteractivePaperCalendar';
+import type { CalendarEvent } from '@/components/InteractivePaperCalendar';
+import { DEFAULT_CALENDAR_EVENTS } from '@/components/InteractivePaperCalendar';
+import { getCachedEvents, setCachedEvents, type EventItem } from '@/lib/eventsCache';
 import { Clock, MapPin, Sparkles, Calendar as CalendarIcon, Download, ExternalLink, ChevronDown } from 'lucide-react';
+
+// 按需异步代码分割重型 42KB 日历组件，释放首屏主线程
+const InteractivePaperCalendar = dynamic(
+  () => import('@/components/InteractivePaperCalendar').then((mod) => ({ default: mod.InteractivePaperCalendar })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[380px] w-full rounded-2xl bg-gradient-to-br from-[#FAF7F2] to-[#EFE5D0] animate-pulse border border-[#8A7A5E]/20" />
+    ),
+  }
+);
 
 interface Event {
   id: string;
@@ -48,22 +58,32 @@ function extractDateTime(dateTimeStr: string) {
 }
 
 export default function EventsPage() {
-  const [events, setEvents] = useState<Event[]>([]);
-  const [loading, setLoading] = useState(true);
+  // ⚡ 0ms 秒开：优先读取内存/会话缓存（如在 Dashboard 时已预拉取），实现首帧即渲染真实活动
+  const [events, setEvents] = useState<EventItem[]>(() => getCachedEvents() || []);
+  const [loading, setLoading] = useState<boolean>(() => !getCachedEvents()?.length);
 
   useEffect(() => {
+    let isMounted = true;
     fetch('/api/events')
       .then((res) => res.json())
       .then((data) => {
-        setEvents(Array.isArray(data) ? data : []);
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          setEvents(data);
+          setCachedEvents(data);
+        }
       })
       .catch((err) => {
         console.error('Failed to load events:', err);
-        setEvents([]);
       })
       .finally(() => {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   /* ══════════════════════════════════════════════════
