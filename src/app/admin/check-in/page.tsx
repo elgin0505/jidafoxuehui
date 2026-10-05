@@ -201,9 +201,6 @@ export default function AdminDashboardPage() {
         text: `✅ 签到成功！${member.name} (${member.memberId}) 已获得 +${points} 功德积分`,
       });
 
-      // 触发青色圆圈动画
-      setCheckInRing({ name: member.name, points });
-
       // 触发气泡通知
       setToast({
         memberName: member.name,
@@ -1111,87 +1108,6 @@ export default function AdminDashboardPage() {
           )}
         </AnimatePresence>
 
-        {/* ── 签到成功：青色勾 + 顺时针进度圈 ── */}
-        <AnimatePresence>
-          {checkInRing && (
-            <motion.div
-              key="check-in-ring"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, transition: { duration: 0.4 } }}
-              className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
-              onClick={() => setCheckInRing(null)}
-            >
-              <motion.div
-                initial={{ scale: 0.6 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0.8 }}
-                transition={{ type: "spring", stiffness: 280, damping: 22 }}
-                className="flex flex-col items-center gap-5"
-              >
-                {/* Ring + tick */}
-                <div className="relative h-36 w-36">
-                  {/* SVG progress ring */}
-                  <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 144 144">
-                    {/* background track */}
-                    <circle
-                      cx="72" cy="72" r="64"
-                      fill="none"
-                      stroke="rgba(20,184,166,0.18)"
-                      strokeWidth="8"
-                    />
-                    {/* animated fill */}
-                    <motion.circle
-                      cx="72" cy="72" r="64"
-                      fill="none"
-                      stroke="#14b8a6"
-                      strokeWidth="8"
-                      strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 64}`}
-                      initial={{ strokeDashoffset: 2 * Math.PI * 64 }}
-                      animate={{ strokeDashoffset: 0 }}
-                      transition={{ duration: 2.2, ease: "easeInOut" }}
-                      onAnimationComplete={() => {
-                        setTimeout(() => setCheckInRing(null), 300);
-                      }}
-                    />
-                  </svg>
-
-                  {/* Teal circle bg + tick */}
-                  <div className="absolute inset-3 flex items-center justify-center rounded-full bg-teal-500/15 border-2 border-teal-400/30">
-                    <motion.svg
-                      viewBox="0 0 52 52"
-                      className="h-16 w-16"
-                      initial={{ pathLength: 0, opacity: 0 }}
-                      animate={{ pathLength: 1, opacity: 1 }}
-                      transition={{ delay: 0.15, duration: 0.55, ease: "easeOut" }}
-                    >
-                      <motion.path
-                        d="M14 27 L23 36 L38 18"
-                        fill="none"
-                        stroke="#14b8a6"
-                        strokeWidth="4.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        initial={{ pathLength: 0 }}
-                        animate={{ pathLength: 1 }}
-                        transition={{ delay: 0.15, duration: 0.55, ease: "easeOut" }}
-                      />
-                    </motion.svg>
-                  </div>
-                </div>
-
-                {/* Label */}
-                <div className="text-center">
-                  <p className="text-xl font-bold text-white drop-shadow-md">签到成功</p>
-                  <p className="text-sm text-teal-200 font-medium mt-0.5">
-                    {checkInRing.name} · +{checkInRing.points} 积分
-                  </p>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </AdminPinLock>
     </PageWrapper>
   );
