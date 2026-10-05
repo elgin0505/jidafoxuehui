@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma, recalculateMemberPoints } from "@/lib/prisma";
 import { logAttendanceToGoogleSheet } from "@/lib/googleSheets";
 import { verifyAdminPin } from "@/lib/adminAuth";
+import { getAuthSession } from "@/lib/auth";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -20,10 +21,18 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  // 1. 安全校验：验证管理员权限
-  const auth = verifyAdminPin(request);
-  if (!auth.isValid && auth.errorResponse) {
-    return auth.errorResponse;
+  // 1. 安全校验：支持管理员通行码 (x-admin-pin) 或 已登录同修会话
+  const adminAuth = verifyAdminPin(request);
+  const session = !adminAuth.isValid ? getAuthSession(request) : null;
+
+  if (!adminAuth.isValid && !session) {
+    return (
+      adminAuth.errorResponse ||
+      NextResponse.json(
+        { error: "未经授权的操作：请登录或提供管理员通行码" },
+        { status: 401 }
+      )
+    );
   }
 
   const body = await request.json();
@@ -46,6 +55,29 @@ export async function POST(request: Request) {
 
   if (!member) {
     return NextResponse.json({ error: "会员不存在" }, { status: 404 });
+  }
+
+  let finalPointsEarned = Number(pointsEarned) || 1;
+
+  // 若非管理员操作，强制校验只能为登录本人签到，且积分由匹配活动设定
+  if (!adminAuth.isValid && session) {
+    const isSelf =
+      member.id === session.userId ||
+      member.userId === session.userId ||
+      member.memberId === session.memberId ||
+      member.email === session.email;
+
+    if (!isSelf) {
+      return NextResponse.json(
+        { error: "权限受限：仅可为本人进行出勤签到" },
+        { status: 403 }
+      );
+    }
+
+    const matchedEvent = await prisma.event.findFirst({
+      where: { name: eventName },
+    });
+    finalPointsEarned = matchedEvent?.points ?? 1;
   }
 
   const today = new Date();
@@ -73,7 +105,7 @@ export async function POST(request: Request) {
     data: {
       memberId: member.id,
       eventName,
-      pointsEarned: Number(pointsEarned) || 1,
+      pointsEarned: finalPointsEarned,
     },
   });
 
@@ -84,7 +116,7 @@ export async function POST(request: Request) {
     memberId: member.memberId,
     memberName: member.name,
     eventName,
-    pointsEarned: Number(pointsEarned) || 1,
+    pointsEarned: finalPointsEarned,
     timestamp: log.dateTime.toISOString(),
   }).catch((err) => console.error("Google Sheets attendance sync error:", err));
 

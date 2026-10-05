@@ -24,6 +24,7 @@ import { Camera } from "lucide-react";
 import { LivingBodhiTree } from "@/components/LivingBodhiTree";
 import type { LotusSeaCanvasProps } from "@/components/LotusSeaCanvas";
 import { setCachedEvents } from "@/lib/eventsCache";
+import { checkinWithToken } from "@/app/attend/actions";
 
 // 按需异步代码分割：非首屏重型弹窗、扫码库与背景画布
 const LotusSeaCanvas = dynamic<LotusSeaCanvasProps>(() => import("@/components/LotusSeaCanvas"), { ssr: false });
@@ -278,25 +279,67 @@ export default function DashboardClient({
     }
   };
 
-  // 会员主动扫描二维码（活动码或签到码）
+  // 会员主动扫描二维码（支持大屏动态 Token 二维码与常规活动签到码）
   const handleScan = async (decodedText: string) => {
     setShowScanner(false);
     if (!currentMember) return;
 
     try {
-      const eventName = decodedText.startsWith("EVENT:")
-        ? decodedText.replace("EVENT:", "")
-        : decodedText || "佛学会常规共修活动";
+      const text = decodedText?.trim() || "";
 
+      // 1. 优先提取并校验动态大屏 Token 凭证
+      let token: string | null = null;
+      if (text.includes("token=")) {
+        try {
+          const url = new URL(text, window.location.origin);
+          token = url.searchParams.get("token");
+        } catch {
+          const match = text.match(/[?&]token=([^&#]+)/);
+          if (match) token = match[1];
+        }
+      } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text)) {
+        token = text;
+      }
+
+      if (token) {
+        sonnerToast.loading("正在校验动态核销凭证…", { id: "qr-checkin" });
+        const result = await checkinWithToken(token, currentMember.memberId || currentMember.id);
+        sonnerToast.dismiss("qr-checkin");
+
+        if (result.success) {
+          await refreshMembers();
+          fetchDetail();
+          setToast({
+            memberName: currentMember.name,
+            memberId: currentMember.memberId,
+            pointsEarned: result.pointsEarned ?? 1,
+          });
+          setToastVisible(true);
+          sonnerToast.success(result.message || "签到成功 · 法喜充满", { duration: 4000 });
+        } else {
+          sonnerToast.error(result.message || "签到未完成", { duration: 4000 });
+        }
+        return;
+      }
+
+      // 2. 常规或静态活动二维码分支 (EVENT:活动名 或 自定义活动名)
+      const eventName = text.startsWith("EVENT:")
+        ? text.replace("EVENT:", "").trim()
+        : text || "佛学会常规共修活动";
+
+      sonnerToast.loading("正在提交出勤签到…", { id: "qr-checkin" });
       const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           memberId: currentMember.id,
           eventName: eventName,
-          pointsEarned: 5,
+          pointsEarned: 1,
         }),
       });
+
+      const data = await res.json().catch(() => ({}));
+      sonnerToast.dismiss("qr-checkin");
 
       if (res.ok) {
         await refreshMembers();
@@ -304,14 +347,17 @@ export default function DashboardClient({
         setToast({
           memberName: currentMember.name,
           memberId: currentMember.memberId,
-          pointsEarned: 5,
+          pointsEarned: data.log?.pointsEarned ?? 1,
         });
         setToastVisible(true);
+        sonnerToast.success(`签到成功！已获得 +${data.log?.pointsEarned ?? 1} 功德积分`, { duration: 4000 });
       } else {
-        alert("签到失败或该活动已完成签到");
+        sonnerToast.error(data.error || "签到未完成，请核对活动信息", { duration: 4000 });
       }
-    } catch {
-      alert("扫码签到遇到网络异常");
+    } catch (err: any) {
+      sonnerToast.dismiss("qr-checkin");
+      console.error("Scan attendance error:", err);
+      sonnerToast.error("扫码签到遇到网络异常，请重试", { duration: 4000 });
     }
   };
 
