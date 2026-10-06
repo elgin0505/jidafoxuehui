@@ -24,9 +24,62 @@ interface MemberContextValue {
 const MemberContext = createContext<MemberContextValue | null>(null);
 
 export function MemberProvider({ children }: { children: ReactNode }) {
-  const [members, setMembers] = useState<Member[]>([]);
-  const [currentMemberId, setCurrentMemberIdState] = useState<string>("");
-  const [loading, setLoading] = useState(true);
+  // 缓存优先（Cache-First）：首帧尝试从 localStorage 恢复已缓存的会员列表与当前会员，实现 0ms 秒开无骨架屏跳闪
+  const [members, setMembers] = useState<Member[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const cached = localStorage.getItem("jbs_cached_members");
+      const list: Member[] = cached ? JSON.parse(cached) : [];
+      const authUserStr = localStorage.getItem("jbs_auth_user");
+      if (authUserStr) {
+        const authUser = JSON.parse(authUserStr);
+        const targetId = authUser.memberId || authUser.id;
+        if (targetId && !list.some((m) => m.id === targetId)) {
+          list.unshift({
+            id: targetId,
+            memberId: authUser.memberCode || "FXH0001",
+            name: authUser.name || "同修",
+            email: authUser.email || "",
+            photo: null,
+            role: authUser.role || "学员",
+            totalPoints: 0,
+          });
+        }
+      }
+      return list;
+    } catch {
+      return [];
+    }
+  });
+
+  const [currentMemberId, setCurrentMemberIdState] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      const saved = localStorage.getItem("currentMemberId");
+      if (saved) return saved;
+      const authUserStr = localStorage.getItem("jbs_auth_user");
+      if (authUserStr) {
+        const authUser = JSON.parse(authUserStr);
+        return authUser.memberId || authUser.id || "";
+      }
+      return "";
+    } catch {
+      return "";
+    }
+  });
+
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const savedId = localStorage.getItem("currentMemberId");
+      const cached = localStorage.getItem("jbs_cached_members");
+      const authUserStr = localStorage.getItem("jbs_auth_user");
+      // 如果本地已有会员缓存或当前已登录会员，首屏直接就绪，无需干等网络返回骨架屏
+      return !(savedId || cached || authUserStr);
+    } catch {
+      return true;
+    }
+  });
 
   const refreshMembers = async () => {
     try {
@@ -34,6 +87,9 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
       if (Array.isArray(data)) {
         setMembers(data);
+        try {
+          localStorage.setItem("jbs_cached_members", JSON.stringify(data));
+        } catch {}
         return data as Member[];
       }
       return [];
@@ -49,7 +105,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
         const saved = localStorage.getItem("currentMemberId");
         if (saved && data.find((m: Member) => m.id === saved)) {
           setCurrentMemberIdState(saved);
-        } else if (data.length > 0) {
+        } else if (data.length > 0 && !currentMemberId) {
           setCurrentMemberIdState(data[0].id);
         }
       })
@@ -67,7 +123,7 @@ export function MemberProvider({ children }: { children: ReactNode }) {
   };
 
   const currentMember =
-    members.find((m) => m.id === currentMemberId) ?? null;
+    members.find((m) => m.id === currentMemberId) ?? (members.length > 0 ? members[0] : null);
 
   return (
     <MemberContext.Provider

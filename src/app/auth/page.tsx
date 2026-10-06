@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Mail, Lock, User, Loader2, Calendar, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -20,8 +21,14 @@ const MindfulJourney = dynamic(
 type Mode = "login" | "register" | "forgot";
 
 export default function AuthPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
   const [isLoading, setIsLoading] = useState(true);
+
+  // -------- 提前预加载仪表板页面代码包，实现登录后 0ms 客户端秒开切入 --------
+  useEffect(() => {
+    router.prefetch("/dashboard");
+  }, [router]);
 
   // -------- 模拟 / 管理加载完成状态 (优雅过渡 800ms) --------
   useEffect(() => {
@@ -186,6 +193,7 @@ function LoginCard({
   onSwitch: () => void;
   onForgotPassword: () => void;
 }) {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -215,20 +223,22 @@ function LoginCard({
         return;
       }
 
-      // Store login session
+      // 瞬时写入认证与当前选定会员，供仪表板首帧读取
       localStorage.setItem("jbs_auth_user", JSON.stringify(data));
       if (data.memberId) {
         localStorage.setItem("currentMemberId", data.memberId);
       }
 
       toast.success(`欢迎回来，${data.name}！`, {
-        description: "正在跳转到仪表板…",
+        description: "正在开启修持仪表板…",
         icon: "🪷",
       });
 
+      // 仅留出 150ms 供微交互视觉反馈，随后立即执行 Next.js SPA 极速切页，消灭硬刷新与白屏停顿
       setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 800);
+        router.push("/dashboard");
+        router.refresh();
+      }, 150);
     } catch {
       toast.error("网络错误，请检查您的连接");
     } finally {
@@ -356,6 +366,7 @@ function LoginCard({
  *  注册卡片
  * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function RegisterCard({ onSwitch }: { onSwitch: () => void }) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"理事" | "学员" | "学长姐">("学员");
@@ -411,13 +422,14 @@ function RegisterCard({ onSwitch }: { onSwitch: () => void }) {
       toast.success("注册成功，法喜充满！", {
         description: `您的专属会员编号为 ${data.memberCode || data.memberId}，正在为您开启修行空间…`,
         icon: "🪷",
-        duration: 4000,
+        duration: 3000,
       });
 
-      // 直接进入内部系统
+      // 极速无缝进入仪表板
       setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 1000);
+        router.push("/dashboard");
+        router.refresh();
+      }, 150);
     } catch {
       toast.error("网络错误，请检查您的连接");
     } finally {
