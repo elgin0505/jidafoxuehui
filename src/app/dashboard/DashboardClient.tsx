@@ -427,8 +427,8 @@ export default function DashboardClient({
 
   return (
     <>
-      {/* ── 枯山水沙地底层（Canvas 固定全屏，z-index: -1，省电模式下自动停用） ── */}
-      {!zenLiteMode && <KaresansuiBackground />}
+      {/* ── 枯山水沙地底层（Canvas 固定全屏，z-index: -1，省电模式或打开供灯模态框时自动停用） ── */}
+      {!zenLiteMode && !showLotusCanvas && <KaresansuiBackground />}
 
 
 
@@ -863,11 +863,11 @@ export default function DashboardClient({
       <AnimatePresence>
         {showLotusCanvas && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 sm:bg-black/90 sm:backdrop-blur-md"
           >
             <div className="relative w-full h-full sm:w-[95vw] sm:max-w-5xl sm:h-[85vh] overflow-hidden rounded-none sm:rounded-3xl border-0 sm:border border-golden-deep/40 shadow-[0_0_50px_rgba(201,162,39,0.15)] bg-[#050505]">
               {/* 右上角关闭按钮（带清晰退出标签与点击区域） */}

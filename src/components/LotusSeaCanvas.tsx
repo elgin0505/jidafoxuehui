@@ -303,33 +303,23 @@ const PreviewLamp: React.FC<{ position: [number, number, number] | null }> = ({ 
   );
 };
 
-// ==================== 莲花灯神经网络光纤连接（因陀罗网） ====================
+// ==================== 莲花灯神经网络光纤连接（因陀罗网 · 万灯交织） ====================
 const NeuralConnections: React.FC<{ lamps: LampData[] }> = ({ lamps }) => {
   const lines = useMemo(() => {
     const lineList: { points: [number, number, number][] }[] = [];
-    const connectedPairs = new Set<string>();
 
+    // 全量互联：每盏莲花与其他所有莲花彼此相连，构成重重无尽的因陀罗网
     for (let i = 0; i < lamps.length; i++) {
-      const lamp = lamps[i];
-      const neighbors = lamps
-        .map((other, j) => ({
-          index: j,
-          dist: Math.hypot(other.position[0] - lamp.position[0], other.position[2] - lamp.position[2]),
-        }))
-        .filter((n) => n.index !== i && n.dist < 20)
-        .sort((a, b) => a.dist - b.dist)
-        .slice(0, 3);
+      for (let j = i + 1; j < lamps.length; j++) {
+        const p1 = lamps[i].position;
+        const p2 = lamps[j].position;
+        const dist = Math.hypot(p1[0] - p2[0], p1[2] - p2[2]);
 
-      for (const n of neighbors) {
-        const pairKey = i < n.index ? `${i}-${n.index}` : `${n.index}-${i}`;
-        if (connectedPairs.has(pairKey)) continue;
-        connectedPairs.add(pairKey);
-
-        const p1 = lamp.position;
-        const p2 = lamps[n.index].position;
-        const dist = n.dist;
-        const arcHeight = Math.min(dist * 0.16, 1.6);
-        const midY = Math.max(p1[1], p2[1]) + 0.25 + arcHeight;
+        // 动态拱高：随两灯跨度延展，最高 2.8；加入微小算法错落偏移，避免多条光缆在空中平面重叠
+        const baseHeight = Math.min(dist * 0.16, 2.6);
+        const stagger = ((i * 7 + j * 13) % 5) * 0.12 - 0.24;
+        const arcHeight = Math.max(0.65, baseHeight + stagger);
+        const midY = Math.max(p1[1], p2[1]) + 0.3 + arcHeight;
 
         const curve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(p1[0], p1[1] + 0.3, p1[2]),
@@ -337,10 +327,12 @@ const NeuralConnections: React.FC<{ lamps: LampData[] }> = ({ lamps }) => {
           new THREE.Vector3(p2[0], p2[1] + 0.3, p2[2]),
         ]);
 
-        const sampledPoints = curve.getPoints(16);
+        const sampleCount = Math.max(16, Math.min(32, Math.round(dist * 1.2)));
+        const sampledPoints = curve.getPoints(sampleCount);
         lineList.push({ points: sampledPoints.map((p) => [p.x, p.y, p.z]) });
       }
     }
+
     return lineList;
   }, [lamps]);
 
@@ -351,9 +343,9 @@ const NeuralConnections: React.FC<{ lamps: LampData[] }> = ({ lamps }) => {
           key={i}
           points={line.points}
           color="#ffa255"
-          lineWidth={1.2}
+          lineWidth={1.1}
           transparent
-          opacity={0.65}
+          opacity={0.6}
           blending={AdditiveBlending}
           depthWrite={false}
         />
@@ -401,6 +393,7 @@ const LampScene: React.FC<LampSceneProps> = ({
   const [ripples, setRipples] = useState<{ id: string; position: [number, number, number] }[]>([]);
   const [previewPos, setPreviewPos] = useState<[number, number, number] | null>(null);
   const [nearIds, setNearIds] = useState<Set<string>>(new Set());
+  const [nearTextIds, setNearTextIds] = useState<Set<string>>(new Set());
   const lastLightUpdateRef = useRef(0);
 
   // 移动端兼容的双击判定引用（连续两次 onPointerDown 时间差与位移）
@@ -436,21 +429,45 @@ const LampScene: React.FC<LampSceneProps> = ({
     }
   }, [isMobile, isZoomed, cameraControlsRef]);
 
-  // 光源裁剪：每 0.5 秒计算最近 10 盏灯开启点光源
+  // 光源与 3D 文字动态视距裁剪（LOD）：每 0.5 秒计算最近的心灯
   useFrame(({ clock }) => {
     const now = clock.elapsedTime;
     if (now - lastLightUpdateRef.current > 0.5) {
       lastLightUpdateRef.current = now;
       const distances = lamps.map((lamp) => ({
         id: lamp.id,
+        userId: lamp.userId,
         dist: new Vector3(...lamp.position).distanceTo(camera.position),
       }));
       distances.sort((a, b) => a.dist - b.dist);
-      const nearest = distances.slice(0, 10).map((d) => d.id);
-      const newSet = new Set(nearest);
+
+      // 点光源裁剪：移动端仅开启最近 3 盏灯，桌面端 8 盏
+      const maxLights = isMobile ? 3 : 8;
+      const nearestLights = distances.slice(0, maxLights).map((d) => d.id);
+      const newLightSet = new Set(nearestLights);
       setNearIds((prev) => {
-        if (prev.size !== newSet.size || [...prev].some((id) => !newSet.has(id))) {
-          return newSet;
+        if (prev.size !== newLightSet.size || [...prev].some((id) => !newLightSet.has(id))) {
+          return newLightSet;
+        }
+        return prev;
+      });
+
+      // 3D 文字裁剪（LOD）：移动端仅渲染近距离 (<18) 的前 5 盏灯以及当前用户自己的灯
+      const maxText = isMobile ? 5 : 20;
+      const maxTextDist = isMobile ? 18 : 28;
+      const nearestText = distances
+        .filter((d) => d.dist < maxTextDist || d.userId === currentUserId)
+        .slice(0, maxText)
+        .map((d) => d.id);
+      // 保证用户自己的灯始终有文字
+      const ownLamp = lamps.find((l) => l.userId === currentUserId);
+      if (ownLamp && !nearestText.includes(ownLamp.id)) {
+        nearestText.push(ownLamp.id);
+      }
+      const newTextSet = new Set(nearestText);
+      setNearTextIds((prev) => {
+        if (prev.size !== newTextSet.size || [...prev].some((id) => !newTextSet.has(id))) {
+          return newTextSet;
         }
         return prev;
       });
@@ -658,15 +675,16 @@ const LampScene: React.FC<LampSceneProps> = ({
       <pointLight position={[0, 20, 0]} intensity={1.5} distance={100} color="#E8F0FF" />
 
       {/* 空间金光粒子 */}
-      <Sparkles count={250} scale={30} size={2} speed={0.2} color="#FBBF24" opacity={0.6} />
+      <Sparkles count={isMobile ? 80 : 250} scale={30} size={2} speed={0.2} color="#FBBF24" opacity={0.6} />
 
-      {/* 苍穹高能螺旋离子日轮（IonSun 天体发光特效）：移动端 16,000 粒子极致绚烂呈现，配合高能发光内核与 Bloom 绽放 */}
+      {/* 苍穹高能螺旋离子日轮（IonSun 天体发光特效）：移动端优化为 2,400 粒子，增大尺寸保持视觉丰满度并彻底根除 Overdraw 卡顿 */}
       <IonSun
         position={[0, 8, -38]}
         rotation={[0.35, 0, 0.15]}
-        coreRadius={isMobile ? 4.0 : 3.5}
+        coreRadius={isMobile ? 3.8 : 3.5}
         maxRadius={16}
-        particleCount={isMobile ? 16000 : 30000}
+        particleCount={isMobile ? 2400 : 30000}
+        particleSize={isMobile ? 0.35 : 0.22}
         spiralArms={3}
       />
 
@@ -674,12 +692,12 @@ const LampScene: React.FC<LampSceneProps> = ({
       <ConcentricRings />
 
       {/* 边界粒子 */}
-      <GlowBoundary radius={OUTER_RADIUS} count={isMobile ? 400 : 600} />
+      <GlowBoundary radius={OUTER_RADIUS} count={isMobile ? 160 : 600} />
 
-      {/* 水墨水面：移动端 60x60 网格细分保证涟漪波纹细腻，GPU Shader 驱动无掉帧 */}
+      {/* 水墨水面：移动端 48x48 网格细分保证涟漪波纹细腻，GPU Shader 驱动无掉帧 */}
       <InkWater
         size={100}
-        segments={isMobile ? 60 : 160}
+        segments={isMobile ? 48 : 160}
         onWaterPointerDown={handleWaterPointerDown}
         onWaterMove={handleWaterMove}
         isPlacementMode={isPlacementMode}
@@ -688,7 +706,7 @@ const LampScene: React.FC<LampSceneProps> = ({
       {/* 放置预览灯 */}
       <PreviewLamp position={previewPos} />
 
-      {/* 渲染所有心灯 */}
+      {/* 渲染所有心灯（结合 LOD 视距裁剪优化） */}
       {lamps.map((lamp) => (
         <ProceduralLamp
           key={lamp.id}
@@ -697,6 +715,7 @@ const LampScene: React.FC<LampSceneProps> = ({
           position={lamp.position}
           userName={lamp.userName}
           lightEnabled={nearIds.has(lamp.id)}
+          showText={nearTextIds.has(lamp.id)}
           onPray={handlePray}
           onDedicate={handlePray}
           message={lamp.message}
@@ -986,12 +1005,12 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
           near: 0.1,
           far: 200,
         }}
-        dpr={isMobile ? [1, 1.5] : [1, 2]}
+        dpr={isMobile ? 1 : [1, 1.8]}
         frameloop={!isVisible ? 'demand' : 'always'}
         gl={{
-          powerPreference: "high-performance",
-          antialias: true,
-          precision: "highp",
+          powerPreference: isMobile ? "default" : "high-performance",
+          antialias: !isMobile,
+          precision: isMobile ? "mediump" : "highp",
           alpha: true,
           preserveDrawingBuffer: false,
         }}
@@ -1016,17 +1035,19 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
             handlePray={handlePray}
             isMobile={isMobile}
           />
-          {/* 移动端与桌面端全量启用极致禅意光晕，移动端针对性关闭多重抗锯齿以确保丝滑 60fps */}
-          <EffectComposer multisampling={isMobile ? 0 : 4}>
-            <Bloom
-              luminanceThreshold={isMobile ? 0.88 : 0.95}
-              mipmapBlur
-              intensity={isMobile ? 1.5 : 1.4}
-              radius={isMobile ? 0.65 : 0.7}
-            />
-            {!isMobile && <Vignette eskil={false} offset={0.12} darkness={0.85} />}
-            {!isMobile && <Noise opacity={0.02} />}
-          </EffectComposer>
+          {/* 移动端彻底跳过后处理 EffectComposer 以根治 iOS WebKit / 微信黑屏与显存崩溃，桌面端保留全量绽放辉光 */}
+          {!isMobile && (
+            <EffectComposer multisampling={4}>
+              <Bloom
+                luminanceThreshold={0.95}
+                mipmapBlur
+                intensity={1.4}
+                radius={0.7}
+              />
+              <Vignette eskil={false} offset={0.12} darkness={0.85} />
+              <Noise opacity={0.02} />
+            </EffectComposer>
+          )}
         </Suspense>
       </Canvas>
 

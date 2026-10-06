@@ -12,6 +12,7 @@ export interface ProceduralLampProps {
   userId?: string;
   userName?: string;
   lightEnabled?: boolean;
+  showText?: boolean;
   onDedicate?: (id: string) => void;
   onPray?: (id: string) => void;
   message?: string;
@@ -136,6 +137,7 @@ const ProceduralLamp: React.FC<ProceduralLampProps> = ({
   id = 'lamp',
   userName = '',
   lightEnabled = true,
+  showText = true,
   onDedicate,
   onPray,
   message,
@@ -328,8 +330,6 @@ const ProceduralLamp: React.FC<ProceduralLampProps> = ({
       <mesh
         geometry={lotusGeometry}
         material={lotusMaterial}
-        castShadow
-        receiveShadow
         onPointerDown={handlePointerDown}
       />
 
@@ -359,7 +359,6 @@ const ProceduralLamp: React.FC<ProceduralLampProps> = ({
           distance={8}
           decay={2}
           position={[0, 0.35, 0]}
-          castShadow
         />
       )}
 
@@ -401,52 +400,54 @@ const ProceduralLamp: React.FC<ProceduralLampProps> = ({
         </group>
       )}
 
-      {/* 悬浮同修姓名与祈祷计数 Billboard */}
-      <Billboard position={[0, 1.25, 0]} onPointerDown={handlePointerDown}>
-        {userName && (
+      {/* 悬浮同修姓名与祈祷计数 Billboard（LOD 视距裁剪优化：仅靠近相机的心灯渲染 3D 文字，杜绝移动端卡顿） */}
+      {showText && (
+        <Billboard position={[0, 1.25, 0]} onPointerDown={handlePointerDown}>
+          {userName && (
+            <Text
+              fontSize={0.28}
+              color="#FFE4A0"
+              anchorX="center"
+              anchorY="middle"
+              material-depthTest={false}
+              outlineWidth={0.02}
+              outlineColor="#000000"
+              fillOpacity={0.95}
+            >
+              {userName}
+            </Text>
+          )}
           <Text
-            fontSize={0.28}
-            color="#FFE4A0"
+            fontSize={0.2}
+            color="#F59E0B"
             anchorX="center"
             anchorY="middle"
             material-depthTest={false}
-            outlineWidth={0.02}
+            outlineWidth={0.015}
             outlineColor="#000000"
-            fillOpacity={0.95}
+            fillOpacity={0.9}
+            position={[0, -0.32, 0]}
           >
-            {userName}
+            {`🙏 ${currentCount}`}
           </Text>
-        )}
-        <Text
-          fontSize={0.2}
-          color="#F59E0B"
-          anchorX="center"
-          anchorY="middle"
-          material-depthTest={false}
-          outlineWidth={0.015}
-          outlineColor="#000000"
-          fillOpacity={0.9}
-          position={[0, -0.32, 0]}
-        >
-          {`🙏 ${currentCount}`}
-        </Text>
-        {message && (
-          <Text
-            fontSize={0.16}
-            color="#FEF08A"
-            anchorX="center"
-            anchorY="middle"
-            material-depthTest={false}
-            outlineWidth={0.01}
-            outlineColor="#1c1917"
-            fillOpacity={0.85}
-            position={[0, -0.58, 0]}
-            maxWidth={3.5}
-          >
-            {message}
-          </Text>
-        )}
-      </Billboard>
+          {message && (
+            <Text
+              fontSize={0.16}
+              color="#FEF08A"
+              anchorX="center"
+              anchorY="middle"
+              material-depthTest={false}
+              outlineWidth={0.01}
+              outlineColor="#1c1917"
+              fillOpacity={0.85}
+              position={[0, -0.58, 0]}
+              maxWidth={3.5}
+            >
+              {message}
+            </Text>
+          )}
+        </Billboard>
+      )}
     </group>
   );
 };

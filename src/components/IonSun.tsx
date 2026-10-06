@@ -10,6 +10,7 @@ export interface IonSunProps {
   rotation?: [number, number, number];
   coreRadius?: number;
   particleCount?: number;
+  particleSize?: number;
   maxRadius?: number;
   spiralArms?: number;
 }
@@ -19,6 +20,7 @@ export const IonSun: React.FC<IonSunProps> = ({
   rotation = [0.35, 0, 0.15],
   coreRadius = 10,
   particleCount = 30000,
+  particleSize = 0.22,
   maxRadius = 45,
   spiralArms = 3,
 }) => {
@@ -107,7 +109,7 @@ export const IonSun: React.FC<IonSunProps> = ({
   const particleMaterial = useMemo(
     () =>
       new THREE.PointsMaterial({
-        size: 0.22,
+        size: particleSize,
         vertexColors: true,
         transparent: true,
         opacity: 0.88,
@@ -116,7 +118,7 @@ export const IonSun: React.FC<IonSunProps> = ({
         sizeAttenuation: true,
         fog: false,
       }),
-    []
+    [particleSize]
   );
 
   // ==================== 缓慢自转 ====================
@@ -136,7 +138,7 @@ export const IonSun: React.FC<IonSunProps> = ({
       <group ref={groupRef}>
         {/* 高能发光内核 */}
         <mesh ref={coreRef}>
-          <sphereGeometry args={[coreRadius, 32, 32]} />
+          <sphereGeometry args={[coreRadius, 24, 24]} />
           <meshStandardMaterial
             color="#ff8800"
             emissive="#ffaa00"
