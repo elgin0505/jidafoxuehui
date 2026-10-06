@@ -46,8 +46,12 @@ export default function AttendClient({ token }: { token: string }) {
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-12 bg-gradient-to-b from-[#FAF7F2] via-[#F6F1E5] to-[#F2EAE0]">
       <div className="w-full max-w-md rounded-3xl border border-ocher/30 bg-white/95 p-8 shadow-2xl backdrop-blur-md text-center">
         {/* 顶部禅意徽标 */}
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-golden-rich/10 border border-golden-rich/30 text-2xl shadow-sm">
-          🪷
+        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-golden-deep to-amber-500 shadow-md p-2">
+          <img
+            src="/sunflower-transparent.png"
+            alt="向日葵"
+            className="h-12 w-12 object-contain drop-shadow select-none"
+          />
         </div>
 
         <h2 className="text-xl font-bold tracking-tight text-charcoal font-serif mb-2">

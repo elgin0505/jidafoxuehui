@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Card, PageHeader, Badge, MemberAvatar } from "@/components/ui";
 import { QRScanner } from "@/components/QRScanner";
 import { DynamicAttendanceQR } from "@/components/DynamicAttendanceQR";
@@ -8,6 +9,7 @@ import { PageWrapper } from "@/components/PageWrapper";
 import { CheckInToast } from "@/components/CheckInToast";
 import { AdminPinLock } from "@/components/AdminPinLock";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast as sonnerToast } from "sonner";
 import {
   Search,
   X,
@@ -30,6 +32,13 @@ import {
   Loader2,
   RotateCcw,
   AlertTriangle,
+  Download,
+  Pencil,
+  LayoutGrid,
+  List,
+  Tv,
+  Cake,
+  Maximize2,
 } from "lucide-react";
 
 interface Event {
@@ -45,6 +54,7 @@ interface Member {
   email: string;
   photo: string | null;
   birthday?: string | null;
+  role?: string;
   totalPoints: number;
   _count?: {
     attendances: number;
@@ -89,6 +99,36 @@ function formatBirthday(dateStr?: string | Date | null): string {
   return `${year}-${month}-${day}`;
 }
 
+function isBirthdayThisMonth(dateStr?: string | Date | null): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return false;
+  return d.getUTCMonth() === new Date().getMonth();
+}
+
+function getRoleBadge(role?: string) {
+  const r = role || "学员";
+  if (r === "理事") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 border border-amber-500/30 shrink-0">
+        👑 理事
+      </span>
+    );
+  }
+  if (r === "学长姐") {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-500/30 shrink-0">
+        🌿 学长姐
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded-md bg-golden-deep/10 px-1.5 py-0.5 text-[10px] font-bold text-golden-rich border border-golden-deep/20 shrink-0">
+      🪷 学员
+    </span>
+  );
+}
+
 export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<"check-in" | "members" | "logs">("check-in");
   const [events, setEvents] = useState<Event[]>([]);
@@ -122,6 +162,34 @@ export default function AdminDashboardPage() {
 
   // 签到成功青色圆圈动画
   const [checkInRing, setCheckInRing] = useState<{ name: string; points: number } | null>(null);
+
+  // 会员名册展示模式 (表格 vs 卡片网格)
+  const [memberViewMode, setMemberViewMode] = useState<"table" | "grid">("table");
+
+  // 会员快速编辑弹窗
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", email: "", birthday: "", role: "学员" });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // 投屏模式下锁定页面滚动并彻底隐藏全局导航栏，防止标识字被遮挡
+  useEffect(() => {
+    if (showDynamicQR) {
+      document.body.classList.add("in-presenter-mode");
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.classList.remove("in-presenter-mode");
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.classList.remove("in-presenter-mode");
+      document.body.style.overflow = "";
+    };
+  }, [showDynamicQR]);
+
 
   const fetchMembers = useCallback(() => {
     fetch("/api/members")
@@ -370,6 +438,82 @@ export default function AdminDashboardPage() {
     return result;
   }, [members, memberSearchQuery, memberSortBy]);
 
+  // 导出名册为 CSV 表格 (Excel 兼容 UTF-8 BOM)
+  const handleExportCSV = () => {
+    const headers = ["会员编号", "姓名", "身份角色", "邮箱", "出生日期", "累计积分", "出勤次数", "法宝兑换次数"];
+    const rows = filteredAndSortedMembers.map((m) => [
+      m.memberId,
+      `"${(m.name || "").replace(/"/g, '""')}"`,
+      m.role || "学员",
+      m.email || "",
+      formatBirthday(m.birthday),
+      m.totalPoints || 0,
+      m._count?.attendances || 0,
+      m._count?.redemptions || 0,
+    ]);
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    link.setAttribute("href", url);
+    link.setAttribute("download", `技大佛学会会员名册_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // 开始编辑会员信息
+  const startEditMember = (member: Member) => {
+    setEditingMember(member);
+    setEditForm({
+      name: member.name,
+      email: member.email || "",
+      birthday: member.birthday ? formatBirthday(member.birthday) : "",
+      role: member.role || "学员",
+    });
+  };
+
+  // 提交更新会员信息
+  const handleSaveMemberEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    setSavingEdit(true);
+    try {
+      const adminPin =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem("jbs_admin_pin") || localStorage.getItem("jbs_admin_custom_pin") || "1080"
+          : "1080";
+      const res = await fetch(`/api/members/${editingMember.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-pin": adminPin,
+        },
+        body: JSON.stringify({
+          name: editForm.name,
+          email: editForm.email,
+          birthday: editForm.birthday ? editForm.birthday : null,
+          role: editForm.role,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage({ type: "success", text: `✅ 会员「${editForm.name}」档案已成功更新` });
+        fetchMembers();
+        setEditingMember(null);
+      } else {
+        setMessage({ type: "error", text: data.error || "更新失败，请重试" });
+      }
+    } catch {
+      setMessage({ type: "error", text: "网络异常，更新失败" });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <PageWrapper page="admin">
       <AdminPinLock>
@@ -475,9 +619,21 @@ export default function AdminDashboardPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
-                      onClick={() => setShowScanner(true)}
-                      disabled={loading || !selectedEvent}
-                      className="btn-jade w-full py-3.5 text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        if (!selectedEvent) {
+                          if (events && events.length > 0) {
+                            setSelectedEvent(events[0].name);
+                            setShowScanner(true);
+                          } else {
+                            sonnerToast.warning("请先在上方活动列表中选择活动");
+                            setMessage({ type: "error", text: "请先在上方活动列表中选择活动" });
+                          }
+                          return;
+                        }
+                        setShowScanner(true);
+                      }}
+                      disabled={loading}
+                      className="btn-jade w-full py-3.5 text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                     >
                       <svg className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                         <path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2" />
@@ -487,9 +643,21 @@ export default function AdminDashboardPage() {
                     </button>
 
                     <button
-                      onClick={() => setShowDynamicQR(true)}
-                      disabled={loading || !selectedEvent}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-golden-deep px-4 py-3.5 text-sm font-bold text-white shadow-md hover:bg-golden-rich transition-all active:scale-98 disabled:opacity-50"
+                      onClick={() => {
+                        if (!selectedEvent) {
+                          if (events && events.length > 0) {
+                            setSelectedEvent(events[0].name);
+                            setShowDynamicQR(true);
+                          } else {
+                            sonnerToast.warning("请先在上方活动列表中选择或创建活动");
+                            setMessage({ type: "error", text: "请先在上方活动列表中选择或创建活动" });
+                          }
+                          return;
+                        }
+                        setShowDynamicQR(true);
+                      }}
+                      disabled={loading}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-golden-deep px-4 py-3.5 text-sm font-bold text-white shadow-md hover:bg-golden-rich transition-all active:scale-98 cursor-pointer disabled:opacity-50"
                     >
                       <QrCode className="h-5 w-5" />
                       <span>投屏动态码 (学员扫码)</span>
@@ -649,23 +817,60 @@ export default function AdminDashboardPage() {
 
             {/* 会员卡片与表格列表 */}
             <Card>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div className="flex items-center gap-2">
                   <h4 className="text-lg font-bold text-charcoal">会员档案名册</h4>
                   <span className="rounded-full bg-golden-deep/10 px-2.5 py-0.5 text-xs font-bold text-golden-rich">
                     共 {filteredAndSortedMembers.length} 人
                   </span>
                 </div>
-                <button
-                  onClick={() => {
-                    setSelectedResetIds(new Set(members.map((m) => m.id)));
-                    setShowResetConfirm(true);
-                  }}
-                  className="flex items-center gap-1.5 rounded-xl border border-carmine/30 bg-carmine/8 px-3 py-1.5 text-xs font-bold text-carmine hover:bg-carmine/15 transition-all"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  积分全部归零
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* 视图切换 */}
+                  <div className="inline-flex rounded-xl bg-warm-cream p-1 border border-ocher/20">
+                    <button
+                      onClick={() => setMemberViewMode("table")}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        memberViewMode === "table" ? "bg-white shadow-xs text-golden-rich" : "text-muted hover:text-charcoal"
+                      }`}
+                      title="表格视图"
+                    >
+                      <List className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">表格</span>
+                    </button>
+                    <button
+                      onClick={() => setMemberViewMode("grid")}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        memberViewMode === "grid" ? "bg-white shadow-xs text-golden-rich" : "text-muted hover:text-charcoal"
+                      }`}
+                      title="卡片网格视图"
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">卡片</span>
+                    </button>
+                  </div>
+
+                  {/* 导出 CSV */}
+                  <button
+                    onClick={handleExportCSV}
+                    className="flex items-center gap-1.5 rounded-xl border border-emerald-600/30 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100/70 transition-all cursor-pointer"
+                    title="导出为 Excel / CSV 格式"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>导出名册</span>
+                  </button>
+
+                  {/* 积分全部归零 */}
+                  <button
+                    onClick={() => {
+                      setSelectedResetIds(new Set(members.map((m) => m.id)));
+                      setShowResetConfirm(true);
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl border border-carmine/30 bg-carmine/8 px-3 py-1.5 text-xs font-bold text-carmine hover:bg-carmine/15 transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>积分归零</span>
+                  </button>
+                </div>
               </div>
 
               {filteredAndSortedMembers.length === 0 ? (
@@ -673,7 +878,85 @@ export default function AdminDashboardPage() {
                   <Users className="h-10 w-10 mx-auto mb-2 text-muted/50" />
                   <p className="text-sm font-medium">未找到符合条件的会员</p>
                 </div>
+              ) : memberViewMode === "grid" ? (
+                /* ── 卡片网格视图 (Card Grid) ── */
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {filteredAndSortedMembers.map((member) => {
+                    const isBdayMonth = isBirthdayThisMonth(member.birthday);
+                    return (
+                      <div
+                        key={member.id}
+                        className="rounded-2xl border border-ocher/20 bg-white/80 p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3 relative overflow-hidden"
+                      >
+                        {isBdayMonth && (
+                          <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-amber-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-xl shadow-xs flex items-center gap-1">
+                            🎂 本月寿星
+                          </div>
+                        )}
+                        <div className="flex items-start gap-3">
+                          <MemberAvatar name={member.name} photo={member.photo} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="font-bold text-charcoal truncate">{member.name}</p>
+                              {getRoleBadge(member.role)}
+                            </div>
+                            <p className="text-xs text-muted font-mono">{member.memberId}</p>
+                            <p className="text-[11px] text-muted truncate mt-0.5">{member.email || "未绑定邮箱"}</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs py-2 border-y border-ocher/10 font-mono">
+                          <div>
+                            <span className="text-[10px] text-muted block">出生日期</span>
+                            <span className="text-stone-700 font-medium flex items-center gap-1 mt-0.5">
+                              <Calendar className="h-3 w-3 text-golden-rich" />
+                              {formatBirthday(member.birthday)}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] text-muted block">累计积分</span>
+                            <span className="text-golden-rich font-black text-sm">{member.totalPoints} 分</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <div className="flex items-center gap-1 text-[11px] font-mono">
+                            <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              {member._count?.attendances ?? 0} 出勤
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => startEditMember(member)}
+                              className="p-1.5 rounded-lg border border-ocher/30 hover:bg-ocher-light/30 text-charcoal transition-all cursor-pointer"
+                              title="编辑资料"
+                            >
+                              <Pencil className="h-3.5 w-3.5 text-muted" />
+                            </button>
+                            <button
+                              onClick={() => setDetailMemberId(member.id)}
+                              className="px-2 py-1 rounded-lg border border-golden-deep/30 hover:bg-golden-deep/10 text-golden-rich font-bold text-xs transition-all flex items-center gap-1 cursor-pointer"
+                            >
+                              <History className="h-3.5 w-3.5" />
+                              <span>明细</span>
+                            </button>
+                            {selectedEvent && (
+                              <button
+                                onClick={() => executeCheckInForMember(member)}
+                                className="px-2 py-1 rounded-lg bg-jade/10 hover:bg-jade/20 text-jade border border-jade/30 font-bold text-xs transition-all flex items-center gap-1 cursor-pointer"
+                              >
+                                <UserCheck className="h-3.5 w-3.5" />
+                                <span>签到</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
+                /* ── 表格视图 (Table View) ── */
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
@@ -694,7 +977,10 @@ export default function AdminDashboardPage() {
                             <div className="flex items-center gap-3">
                               <MemberAvatar name={member.name} photo={member.photo} size="sm" />
                               <div>
-                                <p className="font-bold text-charcoal">{member.name}</p>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="font-bold text-charcoal">{member.name}</p>
+                                  {getRoleBadge(member.role)}
+                                </div>
                                 <p className="text-[11px] text-muted font-mono">{member.memberId}</p>
                               </div>
                             </div>
@@ -717,6 +1003,11 @@ export default function AdminDashboardPage() {
                             <div className="flex items-center gap-1.5 text-xs text-muted font-mono">
                               <Calendar className="h-3.5 w-3.5 text-golden-rich shrink-0" />
                               <span>{formatBirthday(member.birthday)}</span>
+                              {isBirthdayThisMonth(member.birthday) && (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[10px] font-bold text-amber-800" title="本月寿星同修">
+                                  🎂
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -739,19 +1030,27 @@ export default function AdminDashboardPage() {
                           </td>
 
                           <td className="py-3.5 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => startEditMember(member)}
+                                className="p-1.5 rounded-lg border border-ocher/30 hover:bg-ocher-light/30 text-charcoal font-bold text-xs transition-all cursor-pointer"
+                                title="编辑资料"
+                              >
+                                <Pencil className="h-3.5 w-3.5 text-muted" />
+                              </button>
+
                               <button
                                 onClick={() => setDetailMemberId(member.id)}
-                                className="px-2.5 py-1 rounded-lg border border-golden-deep/30 hover:bg-golden-deep/10 text-golden-rich font-bold text-xs transition-all flex items-center gap-1 cursor-pointer"
+                                className="px-2 py-1 rounded-lg border border-golden-deep/30 hover:bg-golden-deep/10 text-golden-rich font-bold text-xs transition-all flex items-center gap-1 cursor-pointer"
                               >
                                 <History className="h-3.5 w-3.5" />
-                                <span>历史明细</span>
+                                <span>明细</span>
                               </button>
 
                               {selectedEvent && (
                                 <button
                                   onClick={() => executeCheckInForMember(member)}
-                                  className="px-2.5 py-1 rounded-lg bg-jade/10 hover:bg-jade/20 text-jade border border-jade/30 font-bold text-xs transition-all flex items-center gap-1 cursor-pointer"
+                                  className="px-2 py-1 rounded-lg bg-jade/10 hover:bg-jade/20 text-jade border border-jade/30 font-bold text-xs transition-all flex items-center gap-1 cursor-pointer"
                                   title={`为 ${member.name} 签到当前活动「${selectedEvent}」`}
                                 >
                                   <UserCheck className="h-3.5 w-3.5" />
@@ -831,56 +1130,6 @@ export default function AdminDashboardPage() {
           <QRScanner onScan={handleScan} onClose={() => setShowScanner(false)} />
         )}
 
-        {/* ── 动态大屏投屏二维码弹窗 (学员扫码自主签到) ── */}
-        <AnimatePresence>
-          {showDynamicQR && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.92, y: 15 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.92, y: 15 }}
-                className="relative w-full max-w-md rounded-3xl border border-white/80 bg-warm-white/95 dark:bg-slate-900/95 p-6 sm:p-8 shadow-2xl backdrop-blur-2xl text-center"
-              >
-                <button
-                  onClick={() => setShowDynamicQR(false)}
-                  className="absolute right-4 top-4 rounded-full p-2 text-muted hover:bg-black/5 dark:hover:bg-white/10 hover:text-charcoal dark:hover:text-white transition-colors"
-                  title="关闭"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-golden-deep/15 text-2xl shadow-inner">
-                  🪷
-                </div>
-
-                <h3 className="text-xl font-bold text-charcoal dark:text-white font-serif">
-                  {selectedEvent || "现场活动签到"}
-                </h3>
-                <p className="text-xs text-muted mt-1">
-                  请同修打开手机相机扫描下方动态码，自动完成签到
-                </p>
-
-                <div className="my-6 flex justify-center">
-                  {events.find((ev) => ev.name === selectedEvent)?.id ? (
-                    <DynamicAttendanceQR
-                      eventId={events.find((ev) => ev.name === selectedEvent)!.id}
-                      size={200}
-                    />
-                  ) : (
-                    <p className="text-xs text-red-500">无法读取活动编号，请先选择活动</p>
-                  )}
-                </div>
-
-                <div className="pt-4 border-t border-ocher/20 flex items-center justify-between text-xs text-muted">
-                  <span>防截图 · 15 秒原子核销</span>
-                  <span className="font-semibold text-golden-rich">
-                    签到积分 +{customPoints || 1}
-                  </span>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
 
         {/* ── 会员详细历史档案弹窗 (Member Detail Modal) ── */}
         <AnimatePresence>
@@ -901,9 +1150,12 @@ export default function AdminDashboardPage() {
                   <div className="flex items-center gap-3">
                     <MemberAvatar name={memberDetail?.name || "佛"} photo={memberDetail?.photo} size="sm" />
                     <div>
-                      <h3 className="text-lg font-bold font-serif text-golden-rich">
-                        {memberDetail?.name || "会员档案"}
-                      </h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-lg font-bold font-serif text-golden-rich">
+                          {memberDetail?.name || "会员档案"}
+                        </h3>
+                        {getRoleBadge(memberDetail?.role)}
+                      </div>
                       <p className="text-xs text-muted font-mono flex items-center gap-1.5 flex-wrap">
                         <span>{memberDetail?.memberId}</span>
                         <span>·</span>
@@ -1150,7 +1402,285 @@ export default function AdminDashboardPage() {
               </motion.div>
             </motion.div>
           )}
+
+          {/* ── 编辑会员资料弹窗 (Edit Member Modal) ── */}
+          {editingMember && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            >
+              <motion.div
+                initial={{ scale: 0.92, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.92, y: 20 }}
+                className="w-full max-w-md rounded-3xl bg-warm-white dark:bg-slate-900 p-6 sm:p-7 shadow-2xl border-2 border-golden-deep/30 text-charcoal dark:text-white"
+              >
+                <div className="flex items-center justify-between border-b border-ocher/20 pb-4 mb-5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-golden-deep/15 text-golden-rich">
+                      <Pencil className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-golden-rich">编辑会员档案</h3>
+                      <p className="text-xs text-muted font-mono">{editingMember.memberId}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setEditingMember(null)}
+                    className="rounded-full p-2 text-muted hover:bg-black/5 dark:hover:bg-white/10"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveMemberEdit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-muted mb-1.5">姓名 / 法号</label>
+                    <input
+                      type="text"
+                      required
+                      value={editForm.name}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                      className="w-full rounded-xl border border-ocher/40 bg-white/90 px-3.5 py-2.5 text-sm text-charcoal focus:border-golden-deep focus:outline-none focus:ring-2 focus:ring-golden-deep/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-muted mb-1.5">电子邮箱</label>
+                    <input
+                      type="email"
+                      required
+                      value={editForm.email}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                      className="w-full rounded-xl border border-ocher/40 bg-white/90 px-3.5 py-2.5 text-sm text-charcoal focus:border-golden-deep focus:outline-none focus:ring-2 focus:ring-golden-deep/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-muted mb-1.5">出生日期 (公历)</label>
+                    <input
+                      type="date"
+                      value={editForm.birthday}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, birthday: e.target.value }))}
+                      className="w-full rounded-xl border border-ocher/40 bg-white/90 px-3.5 py-2.5 text-sm text-charcoal focus:border-golden-deep focus:outline-none focus:ring-2 focus:ring-golden-deep/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-muted mb-1.5">佛学会身份角色</label>
+                    <select
+                      value={editForm.role}
+                      onChange={(e) => setEditForm((prev) => ({ ...prev, role: e.target.value }))}
+                      className="w-full rounded-xl border border-ocher/40 bg-white/90 px-3.5 py-2.5 text-sm text-charcoal focus:border-golden-deep focus:outline-none focus:ring-2 focus:ring-golden-deep/20"
+                    >
+                      <option value="学员">学员 🪷</option>
+                      <option value="学长姐">学长姐 🌿</option>
+                      <option value="理事">理事 👑</option>
+                    </select>
+                  </div>
+
+                  <div className="flex gap-3 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditingMember(null)}
+                      disabled={savingEdit}
+                      className="flex-1 rounded-2xl border border-ocher/30 bg-warm-cream px-4 py-2.5 text-sm font-bold text-charcoal hover:bg-ocher-light/30 transition-all cursor-pointer"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingEdit}
+                      className="flex-1 rounded-2xl bg-golden-deep px-4 py-2.5 text-sm font-bold text-white hover:bg-golden-deep/90 transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                    >
+                      {savingEdit ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          保存中...
+                        </>
+                      ) : (
+                        "保存修改"
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </motion.div>
+          )}
         </AnimatePresence>
+
+        {/* ── 投屏动态码全屏呈现模式 (Dynamic QR Presenter Mode - Portal to body) ── */}
+        {mounted && typeof document !== "undefined" &&
+          createPortal(
+            <AnimatePresence>
+              {showDynamicQR && (
+                <motion.div
+                  key="dynamic-qr-presenter"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[9999] bg-stone-950 text-white flex flex-col justify-between p-4 sm:p-8 md:p-10 select-none overflow-hidden"
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    zIndex: 9999,
+                    paddingTop: "max(1.5rem, env(safe-area-inset-top, 1.5rem))",
+                  }}
+                >
+                  {/* ── 高清清晰的 Emoji 萌趣表情包沉浸背景 (Crisp Clear Emojis Wallpaper - No Blur) ── */}
+                  <div className="absolute inset-0 pointer-events-none overflow-hidden z-0 select-none">
+                    <div
+                      className="absolute inset-0 bg-cover bg-center transition-all"
+                      style={{
+                        backgroundImage: "url('/emojis-bg.png')",
+                        opacity: 0.75, // 清晰高清无模糊
+                      }}
+                    />
+                    {/* 聚光暗调渐变，保持四周表情清晰的同时保障中央二维码与文字极致对比度 */}
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        background:
+                          "radial-gradient(circle at center, rgba(12, 14, 20, 0.45) 0%, rgba(12, 14, 20, 0.8) 100%)",
+                      }}
+                    />
+                  </div>
+
+                  {/* 大屏顶部栏 */}
+                  <div className="relative z-10 flex items-center justify-between border border-white/10 bg-stone-950/60 backdrop-blur-xl rounded-2xl px-4 py-3 sm:px-6 shadow-lg">
+                    <div className="flex items-center gap-3.5">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-golden-deep to-amber-500 shadow-lg text-white font-bold text-xl shrink-0 p-1">
+                        <img
+                          src="/sunflower-transparent.png"
+                          alt="向日葵"
+                          className="h-9 w-9 object-contain drop-shadow select-none"
+                        />
+                      </div>
+                      <div>
+                        <h2 className="text-xl sm:text-2xl font-black tracking-wider text-amber-200">
+                          技大佛学会 · 活动现场签到处
+                        </h2>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs text-stone-300 font-mono">当前活动：</span>
+                          {events.length > 0 ? (
+                            <select
+                              value={selectedEvent || events[0].name}
+                              onChange={(e) => setSelectedEvent(e.target.value)}
+                              className="bg-white/15 hover:bg-white/25 text-amber-300 font-bold text-xs rounded-lg px-2.5 py-1 border border-white/20 focus:outline-none focus:ring-1 focus:ring-amber-400 cursor-pointer"
+                            >
+                              {events.map((ev) => (
+                                <option key={ev.id} value={ev.name} className="bg-stone-900 text-white">
+                                  {ev.name} (+{ev.points}分)
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-amber-400 font-bold text-xs">{selectedEvent || "例常共修"}</span>
+                          )}
+                          {customPoints ? <span className="text-xs text-stone-300 font-mono">· +{customPoints} 积分</span> : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:gap-3">
+                      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/15 backdrop-blur-md px-3 sm:px-4 py-2 text-center">
+                        <p className="text-[10px] text-amber-300 uppercase tracking-widest font-bold">今日已签到</p>
+                        <p className="text-xl sm:text-2xl font-black font-mono text-amber-300">{recentCheckIns.length} 人</p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          if (!document.fullscreenElement) {
+                            document.documentElement.requestFullscreen?.().catch(() => {});
+                          } else {
+                            document.exitFullscreen?.().catch(() => {});
+                          }
+                        }}
+                        className="hidden sm:flex items-center gap-1.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/15 px-3.5 py-2.5 text-xs font-bold text-stone-200 transition-all cursor-pointer backdrop-blur-md"
+                        title="切换浏览器全屏"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                        <span>全屏</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (document.fullscreenElement) {
+                            document.exitFullscreen?.().catch(() => {});
+                          }
+                          setShowDynamicQR(false);
+                        }}
+                        className="flex items-center gap-1.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/15 px-3.5 sm:px-4 py-2.5 text-xs font-bold text-stone-200 transition-all cursor-pointer backdrop-blur-md"
+                      >
+                        <X className="h-4 w-4" />
+                        <span>退出投屏</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 大屏正中央二维码与指示 */}
+                  <div className="relative z-10 flex-1 flex flex-col items-center justify-center my-4 sm:my-6">
+                    <div className="relative p-6 sm:p-10 rounded-3xl bg-stone-950/80 border-2 border-amber-400/50 shadow-[0_0_60px_rgba(245,158,11,0.25),0_25px_60px_rgba(0,0,0,0.85)] backdrop-blur-2xl flex flex-col items-center max-w-lg sm:max-w-xl w-full">
+                      <div className="absolute -top-3.5 px-5 py-1 rounded-full bg-gradient-to-r from-amber-500 to-golden-deep text-black font-black text-xs tracking-wider shadow-lg">
+                        ⚡ 动态安全签到二维码
+                      </div>
+
+                      <div className="p-4 sm:p-6 bg-white rounded-3xl shadow-2xl mt-2 flex items-center justify-center">
+                        {events.find((ev) => ev.name === selectedEvent)?.id ? (
+                          <DynamicAttendanceQR
+                            eventId={events.find((ev) => ev.name === selectedEvent)!.id}
+                            size={340}
+                          />
+                        ) : events.length > 0 ? (
+                          <DynamicAttendanceQR
+                            eventId={events[0].id}
+                            size={340}
+                          />
+                        ) : (
+                          <p className="text-xs text-amber-900 font-bold py-6 text-center">暂无可用活动，请先在控制台创建活动</p>
+                        )}
+                      </div>
+
+                      <p className="mt-5 text-sm sm:text-base text-stone-100 font-medium text-center">
+                        请打开手机进入 <span className="text-amber-300 font-bold">会员仪表板</span>，点击“扫码签到”
+                      </p>
+                      <p className="text-xs text-stone-300 mt-1.5 flex items-center gap-2">
+                        <span>防截图 · 15 秒动态刷新</span>
+                        <span>·</span>
+                        <span className="font-semibold text-amber-300">
+                          签到积分 +{customPoints || 1}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 大屏底栏：最新签到滚动走马灯 */}
+                  <div className="relative z-10 border border-white/10 bg-stone-950/60 backdrop-blur-xl rounded-2xl px-4 py-3 sm:px-6 flex items-center text-xs text-stone-300 shadow-lg overflow-hidden">
+                    <div className="flex items-center gap-2 overflow-x-auto w-full">
+                      <span className="font-bold text-amber-300 shrink-0">🎉 最新签到：</span>
+                      {recentCheckIns.slice(0, 5).map((log) => (
+                        <span
+                          key={log.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-stone-200 border border-white/10 shrink-0 font-medium animate-pulse"
+                        >
+                          <span className="text-amber-300 font-bold">{log.member.name}</span>
+                          <span className="text-[10px] text-emerald-400 font-semibold">+{log.pointsEarned}分</span>
+                        </span>
+                      ))}
+                      {recentCheckIns.length === 0 && <span>等待同修入场签到中...</span>}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>,
+            document.body
+          )
+        }
 
       </AdminPinLock>
     </PageWrapper>

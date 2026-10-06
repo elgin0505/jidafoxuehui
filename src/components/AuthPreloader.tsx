@@ -8,6 +8,7 @@ interface AuthPreloaderProps {
   radius?: number;     // 进度环半径（px）
   emojiSrc?: string;   // 可选外部图片（若未提供则使用高清 3D 动画表情包）
   emojiAlt?: string;
+  onDismiss?: () => void;
 }
 
 /**
@@ -19,9 +20,23 @@ interface AuthPreloaderProps {
  */
 export function Animated3DEmoji({ className = 'h-32 w-32 md:h-40 md:w-40' }: { className?: string }) {
   return (
-    <div className={`relative z-10 select-none pointer-events-none ${className}`}>
+    <div
+      className={`relative z-10 select-none pointer-events-none ${className}`}
+      style={{
+        width: '140px',
+        height: '140px',
+        maxWidth: '100%',
+        maxHeight: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <svg
         viewBox="0 0 400 400"
+        width="140"
+        height="140"
+        style={{ width: '100%', height: '100%', maxWidth: '140px', maxHeight: '140px', display: 'block' }}
         className="h-full w-full overflow-visible"
         xmlns="http://www.w3.org/2000/svg"
       >
@@ -285,19 +300,38 @@ const AuthPreloader: React.FC<AuthPreloaderProps> = ({
   radius = 22,
   emojiSrc,
   emojiAlt = 'Loading',
+  onDismiss,
 }) => {
   // 每个进度点的角度间隔
   const angleStep = 360 / dotCount;
 
   return (
     <motion.div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black"
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-stone-950"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#0c0e14',
+      }}
       initial={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 0.9, filter: 'blur(10px)' }}
-      transition={{ duration: 0.8, ease: [0.65, 0, 0.35, 1] }}
+      exit={{ opacity: 0, scale: 0.95, filter: 'blur(8px)' }}
+      transition={{ duration: 0.5, ease: [0.65, 0, 0.35, 1] }}
     >
       {/* 居中容器（承载表情 + 进度环） */}
-      <div className="relative flex items-center justify-center">
+      <div
+        className="relative flex items-center justify-center"
+        style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
         {/* -------- 呼吸 + 悬浮与微晃动点头的表情主体 -------- */}
         <motion.div
           className="relative"
@@ -333,6 +367,7 @@ const AuthPreloader: React.FC<AuthPreloaderProps> = ({
               src={emojiSrc}
               alt={emojiAlt}
               className="relative z-10 h-32 w-32 select-none pointer-events-none md:h-40 md:w-40"
+              style={{ width: '140px', height: '140px', objectFit: 'contain' }}
               draggable={false}
               onError={(e) => {
                 const target = e.currentTarget;
@@ -354,6 +389,7 @@ const AuthPreloader: React.FC<AuthPreloaderProps> = ({
           <div
             className="absolute z-20"
             style={{
+              position: 'absolute',
               top: '-8px',
               right: '-8px',
               width: '60px',
@@ -389,6 +425,29 @@ const AuthPreloader: React.FC<AuthPreloaderProps> = ({
           </div>
         </motion.div>
       </div>
+
+      {/* 快捷跳过 / 点击进入入口（避免极端慢网或卡顿情况下阻断用户） */}
+      {onDismiss && (
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1, duration: 0.4 }}
+          onClick={onDismiss}
+          className="mt-6 text-xs text-stone-400 hover:text-white transition-all cursor-pointer px-3.5 py-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 backdrop-blur-sm"
+          style={{
+            marginTop: '24px',
+            fontSize: '12px',
+            color: '#9ca3af',
+            cursor: 'pointer',
+            padding: '6px 14px',
+            borderRadius: '9999px',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          }}
+        >
+          点击直接进入 →
+        </motion.button>
+      )}
 
       {/* -------- 全局 CSS 动画（在组件内联注入，避免污染全局样式）-------- */}
       <style

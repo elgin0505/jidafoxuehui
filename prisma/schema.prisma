@@ -25,6 +25,10 @@ model Member {
   updatedAt   DateTime        @updatedAt
 
   @@index([memberId])
+  @@index([email])
+  @@index([userId])
+  @@index([role])
+  @@index([createdAt])
 }
 
 model AttendanceLog {

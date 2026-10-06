@@ -84,6 +84,26 @@ export default function DashboardClient({
   const [liveEventsCount, setLiveEventsCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
+  const [zenLiteMode, setZenLiteMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setZenLiteMode(localStorage.getItem("jbs_zen_lite_mode") === "true");
+    }
+  }, []);
+
+  const toggleZenLiteMode = () => {
+    setZenLiteMode((prev) => {
+      const next = !prev;
+      localStorage.setItem("jbs_zen_lite_mode", String(next));
+      if (next) {
+        sonnerToast.success("已开启清心省电模式 (禁用高功耗 3D 动效，保障流畅)", { icon: "🍃" });
+      } else {
+        sonnerToast.success("已恢复完整视觉禅意动效", { icon: "✨" });
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -131,9 +151,22 @@ export default function DashboardClient({
     if (!currentMember) return;
     fetchDetail();
 
+    // 离线优先策略：优先读取本地持久化二维码，即使弱网断网也能瞬间出码
+    const offlineQrKey = `jbs_offline_qr_${currentMember.memberId}`;
+    const cachedQr = typeof window !== "undefined" ? localStorage.getItem(offlineQrKey) : null;
+    if (cachedQr) {
+      setQrCode(cachedQr);
+    }
+
     fetch(`/api/qrcode?memberId=${currentMember.memberId}`)
       .then((res) => res.json())
-      .then((data) => setQrCode(data.qrDataUrl));
+      .then((data) => {
+        if (data?.qrDataUrl) {
+          setQrCode(data.qrDataUrl);
+          localStorage.setItem(offlineQrKey, data.qrDataUrl);
+        }
+      })
+      .catch((err) => console.warn("Failed to refresh online QR code, using offline cache:", err));
       
     fetch(`/api/events`)
       .then((res) => res.json())
@@ -365,7 +398,7 @@ export default function DashboardClient({
   if (loading && !currentMember) {
     return (
       <>
-        <KaresansuiBackground />
+        {!zenLiteMode && <KaresansuiBackground />}
         <MemberCardSkeleton />
       </>
     );
@@ -375,7 +408,7 @@ export default function DashboardClient({
   if (!currentMember) {
     return (
       <>
-        <KaresansuiBackground />
+        {!zenLiteMode && <KaresansuiBackground />}
         <EmptyState
           icon={
             <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -394,8 +427,8 @@ export default function DashboardClient({
 
   return (
     <>
-      {/* ── 枯山水沙地底层（Canvas 固定全屏，z-index: -1） ── */}
-      <KaresansuiBackground />
+      {/* ── 枯山水沙地底层（Canvas 固定全屏，z-index: -1，省电模式下自动停用） ── */}
+      {!zenLiteMode && <KaresansuiBackground />}
 
 
 

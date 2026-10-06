@@ -408,5 +408,12 @@
   [data-nextjs-toast] {
     display: none !important;
   }
+
+  /* 现场大屏/投屏模式下彻底隐藏全局导航条与底栏，确保标识字绝不被遮挡 */
+  body.in-presenter-mode header,
+  body.in-presenter-mode nav {
+    display: none !important;
+  }
 }
+
 

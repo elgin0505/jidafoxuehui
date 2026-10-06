@@ -23,9 +23,9 @@ export default function AuthPage() {
   const [mode, setMode] = useState<Mode>("login");
   const [isLoading, setIsLoading] = useState(true);
 
-  // -------- 模拟 / 管理加载完成状态 --------
+  // -------- 模拟 / 管理加载完成状态 (优雅过渡 800ms) --------
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 2200);
+    const timer = setTimeout(() => setIsLoading(false), 800);
     return () => clearTimeout(timer);
   }, []);
 
@@ -45,17 +45,34 @@ export default function AuthPage() {
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-8 sm:py-12">
       {/* -------- Auth 入场 Preloader -------- */}
       <AnimatePresence mode="wait">
-        {isLoading && <AuthPreloader key="auth-preloader" />}
+        {isLoading && (
+          <AuthPreloader
+            key="auth-preloader"
+            onDismiss={() => setIsLoading(false)}
+          />
+        )}
       </AnimatePresence>
 
-      {/* -------- 返回首页快捷入口 -------- */}
-      <Link
-        href="/"
-        className="absolute left-5 top-5 z-40 flex items-center gap-1.5 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white/90 backdrop-blur-md border border-white/20 shadow-lg transition-all hover:bg-white/25 hover:scale-105 active:scale-95"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        <span>返回首页</span>
-      </Link>
+      {/* -------- 返回首页快捷入口 (仅在表单呈现后淡入，避免加载时重叠) -------- */}
+      <AnimatePresence>
+        {!isLoading && (
+          <motion.div
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="absolute left-5 top-5 z-40"
+          >
+            <Link
+              href="/"
+              className="flex items-center gap-1.5 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white/90 backdrop-blur-md border border-white/20 shadow-lg transition-all hover:bg-white/25 hover:scale-105 active:scale-95"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>返回首页</span>
+            </Link>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── 1. 恒河圣境与 3D 禅境湖泊融合全景背景 ── */}
       <Suspense fallback={null}>
