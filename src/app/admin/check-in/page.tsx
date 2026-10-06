@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useRef, useMemo } from "react";
-import { Card, PageHeader, Badge } from "@/components/ui";
+import { Card, PageHeader, Badge, MemberAvatar } from "@/components/ui";
 import { QRScanner } from "@/components/QRScanner";
 import { DynamicAttendanceQR } from "@/components/DynamicAttendanceQR";
 import { PageWrapper } from "@/components/PageWrapper";
@@ -15,6 +15,7 @@ import {
   Sparkles,
   UserCheck,
   Users,
+  Calendar,
   CalendarCheck,
   Award,
   QrCode,
@@ -43,6 +44,7 @@ interface Member {
   name: string;
   email: string;
   photo: string | null;
+  birthday?: string | null;
   totalPoints: number;
   _count?: {
     attendances: number;
@@ -69,6 +71,22 @@ interface MemberDetailData extends Member {
     pointsSpent: number;
     reward: { name: string };
   }[];
+}
+
+function formatBirthday(dateStr?: string | Date | null): string {
+  if (!dateStr) return "未填写";
+  if (typeof dateStr === "string") {
+    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return `${match[1]}-${match[2]}-${match[3]}`;
+    }
+  }
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "未填写";
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export default function AdminDashboardPage() {
@@ -336,7 +354,8 @@ export default function AdminDashboardPage() {
         (m) =>
           m.name.toLowerCase().includes(q) ||
           m.memberId.toLowerCase().includes(q) ||
-          (m.email && m.email.toLowerCase().includes(q))
+          (m.email && m.email.toLowerCase().includes(q)) ||
+          (m.birthday && formatBirthday(m.birthday).includes(q))
       );
     }
 
@@ -662,6 +681,7 @@ export default function AdminDashboardPage() {
                         <th className="pb-3 pr-4 font-bold uppercase">会员档案</th>
                         <th className="pb-3 pr-4 font-bold uppercase">会员编号</th>
                         <th className="pb-3 pr-4 font-bold uppercase">邮箱</th>
+                        <th className="pb-3 pr-4 font-bold uppercase">出生日期</th>
                         <th className="pb-3 pr-4 font-bold uppercase text-center">出勤 / 兑换</th>
                         <th className="pb-3 pr-4 font-bold uppercase text-right">累计积分</th>
                         <th className="pb-3 font-bold uppercase text-center">操作</th>
@@ -672,9 +692,7 @@ export default function AdminDashboardPage() {
                         <tr key={member.id} className="hover:bg-amber-50/40 transition-colors">
                           <td className="py-3.5 pr-4">
                             <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-golden-deep to-ocher-light text-white font-bold shadow-xs">
-                                {member.name.charAt(0)}
-                              </div>
+                              <MemberAvatar name={member.name} photo={member.photo} size="sm" />
                               <div>
                                 <p className="font-bold text-charcoal">{member.name}</p>
                                 <p className="text-[11px] text-muted font-mono">{member.memberId}</p>
@@ -692,6 +710,13 @@ export default function AdminDashboardPage() {
                             <div className="flex items-center gap-1 text-xs text-muted">
                               <Mail className="h-3.5 w-3.5" />
                               <span>{member.email || "未绑定邮箱"}</span>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 pr-4">
+                            <div className="flex items-center gap-1.5 text-xs text-muted font-mono">
+                              <Calendar className="h-3.5 w-3.5 text-golden-rich shrink-0" />
+                              <span>{formatBirthday(member.birthday)}</span>
                             </div>
                           </td>
 
@@ -874,14 +899,25 @@ export default function AdminDashboardPage() {
               >
                 <div className="flex items-center justify-between border-b border-ocher/20 pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-golden-deep text-white font-bold text-lg shadow-sm">
-                      {memberDetail?.name ? memberDetail.name.charAt(0) : "🪷"}
-                    </div>
+                    <MemberAvatar name={memberDetail?.name || "佛"} photo={memberDetail?.photo} size="sm" />
                     <div>
                       <h3 className="text-lg font-bold font-serif text-golden-rich">
                         {memberDetail?.name || "会员档案"}
                       </h3>
-                      <p className="text-xs text-muted font-mono">{memberDetail?.memberId} · {memberDetail?.email}</p>
+                      <p className="text-xs text-muted font-mono flex items-center gap-1.5 flex-wrap">
+                        <span>{memberDetail?.memberId}</span>
+                        <span>·</span>
+                        <span>{memberDetail?.email}</span>
+                        {memberDetail?.birthday && (
+                          <>
+                            <span>·</span>
+                            <span className="inline-flex items-center gap-1 text-golden-rich">
+                              <Calendar className="h-3 w-3" />
+                              {formatBirthday(memberDetail.birthday)}
+                            </span>
+                          </>
+                        )}
+                      </p>
                     </div>
                   </div>
                   <button
@@ -1059,9 +1095,17 @@ export default function AdminDashboardPage() {
                           }}
                           className="h-4 w-4 rounded border-ocher/40 text-carmine focus:ring-carmine/30 accent-carmine"
                         />
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-golden-deep to-ocher-light text-white text-xs font-bold">
-                          {m.name.charAt(0)}
-                        </div>
+                        {m.photo ? (
+                          <img
+                            src={m.photo}
+                            alt={m.name}
+                            className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-golden-deep/30"
+                          />
+                        ) : (
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-golden-deep to-ocher-light text-white text-xs font-bold">
+                            {m.name.charAt(0)}
+                          </div>
+                        )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-charcoal dark:text-white truncate">{m.name}</p>
                           <p className="text-[10px] text-muted font-mono">{m.memberId}</p>
@@ -1241,9 +1285,17 @@ function ManualLookup({
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-golden-deep text-white text-xs font-bold">
-                  {member.name.charAt(0)}
-                </div>
+                {member.photo ? (
+                  <img
+                    src={member.photo}
+                    alt={member.name}
+                    className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-golden-deep/30"
+                  />
+                ) : (
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-golden-deep text-white text-xs font-bold">
+                    {member.name.charAt(0)}
+                  </div>
+                )}
                 <div>
                   <span className="font-bold">{member.name}</span>
                   <span className="ml-1.5 font-mono text-xs text-muted">({member.memberId})</span>
