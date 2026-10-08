@@ -420,8 +420,8 @@ const LampScene: React.FC<LampSceneProps> = ({
       cameraControlsRef.current = controls;
       if (controls) {
         if (isMobile) {
-          // 移动端黄金纵向画幅：微调仰角与拉远纵深，让上方苍穹天体与下方莲池金环完美同框
-          controls.setLookAt(0, 11.5, 25, 0, 2.0, -5, false);
+          // 移动端黄金纵向画幅：适度拉近视角，让莲池与同修心灯清晰呈现
+          controls.setLookAt(0, 10.5, 22, 0, 1.8, -3, false);
         } else {
           controls.setLookAt(0, 10, 18, 0, 0, 0, false);
         }
@@ -435,7 +435,7 @@ const LampScene: React.FC<LampSceneProps> = ({
   useEffect(() => {
     if (cameraControlsRef.current && !isZoomed) {
       if (isMobile) {
-        cameraControlsRef.current.setLookAt(0, 11.5, 25, 0, 2.0, -5, false);
+        cameraControlsRef.current.setLookAt(0, 10.5, 22, 0, 1.8, -3, false);
       } else {
         cameraControlsRef.current.setLookAt(0, 10, 18, 0, 0, 0, false);
       }
@@ -466,9 +466,9 @@ const LampScene: React.FC<LampSceneProps> = ({
         return prev;
       });
 
-      // 3D 文字裁剪（LOD）：移动端仅渲染近距离 (<18) 的前 5 盏灯以及当前用户自己的灯
-      const maxText = isMobile ? 5 : 20;
-      const maxTextDist = isMobile ? 18 : 28;
+      // 3D 文字裁剪（LOD）：移动端视距扩大至 34，最大渲染 12 盏，保证全池主要心灯均能清晰显示
+      const maxText = isMobile ? 12 : 25;
+      const maxTextDist = isMobile ? 34 : 38;
       const nearestText = distances
         .filter((d) => d.dist < maxTextDist || d.userId === currentUserId)
         .slice(0, maxText)
@@ -519,9 +519,12 @@ const LampScene: React.FC<LampSceneProps> = ({
         return;
       }
 
-      // 前端拦截：遍历现有 lamps 状态，若已存在当前 userId 的莲灯，阻断操作并弹出全局 Toast 提示
-      const userAlreadyHasLamp = lamps.some((lamp) => lamp.userId === currentUserId);
+      // 前端拦截：遍历现有 lamps 状态，若已存在当前同修的莲灯，阻断操作并弹出全局 Toast 提示
+      const userAlreadyHasLamp = lamps.some(
+        (lamp) => lamp.userId === currentUserId || (currentUserName && currentUserName !== '同修' && lamp.userName === currentUserName)
+      );
       if (userAlreadyHasLamp) {
+        setIsPlacementMode(false);
         if (onLimitReached) {
           onLimitReached('每位同修仅限供奉一盏莲灯');
         } else {
@@ -730,6 +733,7 @@ const LampScene: React.FC<LampSceneProps> = ({
           userName={lamp.userName}
           lightEnabled={nearIds.has(lamp.id)}
           showText={nearTextIds.has(lamp.id)}
+          isMobile={isMobile}
           onPray={handlePray}
           onDedicate={handlePray}
           message={lamp.message}
@@ -954,7 +958,9 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
    */
   const handleTogglePlacement = useCallback(() => {
     if (!isPlacementMode) {
-      const alreadyHas = lamps.some((l) => l.userId === currentUserId);
+      const alreadyHas = lamps.some(
+        (l) => l.userId === currentUserId || (currentUserName && currentUserName !== '同修' && l.userName === currentUserName)
+      );
       if (alreadyHas) {
         if (onLimitReached) {
           onLimitReached('每位同修仅限供奉一盏莲灯');
@@ -968,7 +974,7 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
       }
     }
     setIsPlacementMode((prev) => !prev);
-  }, [isPlacementMode, lamps, currentUserId, onLimitReached]);
+  }, [isPlacementMode, lamps, currentUserId, currentUserName, onLimitReached]);
 
   /**
    * 恢复视角
@@ -1014,23 +1020,19 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
       <Canvas
         shadows={!isMobile}
         camera={{
-          position: isMobile ? [0, 11.5, 25] : [0, 10, 18],
-          fov: isMobile ? 58 : 50,
+          position: isMobile ? [0, 10.5, 22] : [0, 10, 18],
+          fov: isMobile ? 54 : 50,
           near: 0.1,
           far: 200,
         }}
-        // 模块一：智能自适应 DPR 封顶 1.5，消除低清晰度同时杜绝移动端高刷 Retina 显存与像素填充率雪崩
-        dpr={
-          isMobile
-            ? Math.min(typeof window !== 'undefined' ? window.devicePixelRatio : 1.5, 1.5)
-            : [1, 2]
-        }
+        // 模块一：智能自适应 DPR 支持最高 2.0，彻底消除低清晰度拉伸发虚，与 Retina 视网膜屏达到点对点真高清
+        dpr={isMobile ? [1, 2] : [1, 2]}
         frameloop={!isVisible ? 'demand' : 'always'}
         // 模块一：关闭原生 MSAA，交由单通道 SMAA 接管，启用高性能模式
         gl={{
           powerPreference: "high-performance",
           antialias: false,
-          precision: isMobile ? "mediump" : "highp",
+          precision: "highp",
           alpha: true,
           preserveDrawingBuffer: false,
         }}
@@ -1056,14 +1058,14 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
             isMobile={isMobile}
           />
 
-          {/* 模块二：电影级低功耗后处理管线 (全平台启用，移动端通过 Resolution.HALF 降级 Bloom，显存计算量直降 75% 且保障 60FPS) */}
+          {/* 模块二：电影级低功耗后处理管线 (luminanceThreshold 提高至 0.92，杜绝文字自身发光散焦变糊) */}
           <EffectComposer multisampling={0} enableNormalPass={false}>
             <Bloom
               mipmapBlur
-              intensity={isMobile ? 1.15 : 1.4}
-              luminanceThreshold={0.8}
-              luminanceSmoothing={0.25}
-              radius={0.75}
+              intensity={isMobile ? 1.05 : 1.4}
+              luminanceThreshold={0.92}
+              luminanceSmoothing={0.2}
+              radius={isMobile ? 0.6 : 0.75}
               levels={isMobile ? 5 : 8}
               resolutionScale={isMobile ? Resolution.HALF : Resolution.FULL}
             />

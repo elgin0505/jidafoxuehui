@@ -13,6 +13,7 @@ export interface ProceduralLampProps {
   userName?: string;
   lightEnabled?: boolean;
   showText?: boolean;
+  isMobile?: boolean;
   onDedicate?: (id: string) => void;
   onPray?: (id: string) => void;
   message?: string;
@@ -138,6 +139,7 @@ const ProceduralLamp: React.FC<ProceduralLampProps> = ({
   userName = '',
   lightEnabled = true,
   showText = true,
+  isMobile = false,
   onDedicate,
   onPray,
   message,
@@ -400,48 +402,51 @@ const ProceduralLamp: React.FC<ProceduralLampProps> = ({
         </group>
       )}
 
-      {/* 悬浮同修姓名与祈祷计数 Billboard（LOD 视距裁剪优化：仅靠近相机的心灯渲染 3D 文字，杜绝移动端卡顿） */}
+      {/* 悬浮同修姓名与祈祷计数 Billboard（移动端增大字号并强化高对比度深色描边，彻底解决模糊看不清问题） */}
       {showText && (
-        <Billboard position={[0, 1.25, 0]} onPointerDown={handlePointerDown}>
+        <Billboard position={[0, isMobile ? 1.35 : 1.25, 0]} onPointerDown={handlePointerDown}>
           {userName && (
             <Text
-              fontSize={0.28}
-              color="#FFE4A0"
+              fontSize={isMobile ? 0.38 : 0.28}
+              color="#FFF8DE"
               anchorX="center"
               anchorY="middle"
               material-depthTest={false}
-              outlineWidth={0.02}
-              outlineColor="#000000"
-              fillOpacity={0.95}
+              outlineWidth={isMobile ? 0.035 : 0.022}
+              outlineColor="#0f172a"
+              outlineOpacity={1}
+              fillOpacity={1}
             >
               {userName}
             </Text>
           )}
           <Text
-            fontSize={0.2}
-            color="#F59E0B"
+            fontSize={isMobile ? 0.26 : 0.2}
+            color="#FBBF24"
             anchorX="center"
             anchorY="middle"
             material-depthTest={false}
-            outlineWidth={0.015}
-            outlineColor="#000000"
-            fillOpacity={0.9}
-            position={[0, -0.32, 0]}
+            outlineWidth={isMobile ? 0.025 : 0.016}
+            outlineColor="#0f172a"
+            outlineOpacity={1}
+            fillOpacity={1}
+            position={[0, isMobile ? -0.42 : -0.32, 0]}
           >
             {`🙏 ${currentCount}`}
           </Text>
           {message && (
             <Text
-              fontSize={0.16}
+              fontSize={isMobile ? 0.22 : 0.16}
               color="#FEF08A"
               anchorX="center"
               anchorY="middle"
               material-depthTest={false}
-              outlineWidth={0.01}
-              outlineColor="#1c1917"
-              fillOpacity={0.85}
-              position={[0, -0.58, 0]}
-              maxWidth={3.5}
+              outlineWidth={isMobile ? 0.02 : 0.012}
+              outlineColor="#0f172a"
+              outlineOpacity={0.95}
+              fillOpacity={0.9}
+              position={[0, isMobile ? -0.76 : -0.58, 0]}
+              maxWidth={isMobile ? 4.5 : 3.5}
             >
               {message}
             </Text>

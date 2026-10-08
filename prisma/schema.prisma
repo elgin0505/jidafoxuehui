@@ -137,7 +137,7 @@ model ZenGameScore {
 // ── Lotus Sea Lamp ───────────────────────────────────────────────
 model Lamp {
   id          String   @id @default(cuid())
-  userId      String
+  userId      String   @unique
   userName    String   @default("同修")
   posX        Float
   posY        Float    @default(0)

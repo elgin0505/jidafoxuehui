@@ -40,20 +40,24 @@ export async function POST(request: Request) {
       );
     }
     const userId = rawUserId.trim();
+    const userName = (typeof body.userName === "string" && body.userName.trim()) || session?.name || "同修";
 
-    // 后端校验：单人单灯限制
+    // 后端强校验：单人单灯限制（按 userId 与真实姓名双重排重）
     const existingLamp = await prisma.lamp.findFirst({
-      where: { userId },
+      where: {
+        OR: [
+          { userId },
+          ...(userName && userName !== "同修" ? [{ userName }] : []),
+        ],
+      },
     });
 
     if (existingLamp) {
       return NextResponse.json(
-        { error: "每位同修仅限供奉一盏莲灯" },
+        { error: `同修【${existingLamp.userName}】已供奉过一盏莲灯，每位同修仅限供奉一盏` },
         { status: 400 }
       );
     }
-
-    const userName = (typeof body.userName === "string" && body.userName.trim()) || session?.name || "同修";
     const posX = Number.isFinite(body.posX)
       ? Number(body.posX)
       : (Array.isArray(body.position) && Number.isFinite(body.position[0]) ? Number(body.position[0]) : 0);
