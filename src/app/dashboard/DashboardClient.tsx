@@ -869,7 +869,10 @@ export default function DashboardClient({
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 sm:bg-black/90 sm:backdrop-blur-md"
           >
-            <div className="relative w-full h-full sm:w-[95vw] sm:max-w-5xl sm:h-[85vh] overflow-hidden rounded-none sm:rounded-3xl border-0 sm:border border-golden-deep/40 shadow-[0_0_50px_rgba(201,162,39,0.15)] bg-[#050505]">
+            <div
+              className="relative w-full h-full sm:w-[95vw] sm:max-w-5xl sm:h-[85vh] overflow-hidden rounded-none sm:rounded-3xl border-0 sm:border border-golden-deep/40 shadow-[0_0_50px_rgba(201,162,39,0.15)] bg-[#0a0a0a]"
+              style={{ background: 'radial-gradient(ellipse at 50% 60%, #0d1a30 0%, #0a0a0a 75%, #050505 100%)' }}
+            >
               {/* 右上角关闭按钮（带清晰退出标签与点击区域） */}
               <button
                 type="button"

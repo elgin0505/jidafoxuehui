@@ -3,8 +3,9 @@
 
 import React, { useRef, useMemo, useState, useCallback, useEffect, Suspense } from 'react';
 import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
-import { CameraControls, Sparkles, QuadraticBezierLine } from '@react-three/drei';
+import { CameraControls, Sparkles, QuadraticBezierLine, Html } from '@react-three/drei';
 import { EffectComposer, Bloom, SMAA, Vignette, Noise } from '@react-three/postprocessing';
+import { motion } from 'framer-motion';
 import * as THREE from 'three';
 import {
   MeshPhysicalMaterial,
@@ -995,87 +996,156 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
       currentUserRole === '理事' ||
       process.env.NODE_ENV !== 'production');
 
+// ==================== 模块二：全景 Suspense 3D 骨架屏加载器 ====================
+function LotusSceneLoader() {
+  return (
+    <Html center zIndexRange={[100, 0]}>
+      <div className="flex flex-col items-center justify-center pointer-events-none select-none text-center min-w-[200px]">
+        {/* 呼吸光晕与旋转莲花 */}
+        <div className="relative flex items-center justify-center mb-3">
+          <div className="absolute h-16 w-16 rounded-full border border-amber-400/30 animate-ping opacity-35" />
+          <div className="h-14 w-14 rounded-full bg-amber-500/10 border border-amber-400/40 backdrop-blur-md flex items-center justify-center text-2xl shadow-[0_0_20px_rgba(251,191,36,0.25)] animate-spin-slow">
+            🪷
+          </div>
+        </div>
+        <p className="text-xs font-serif tracking-widest text-amber-200/90 font-medium drop-shadow-md">
+          正在凝聚愿力...
+        </p>
+        <span className="text-[10px] text-amber-400/50 mt-1 font-mono tracking-wider">
+          3D 莲花点灯道场
+        </span>
+      </div>
+    </Html>
+  );
+}
+
   const containerRef = useRef<HTMLDivElement>(null);
   const isVisible = useCanvasVisibility(containerRef);
   const [isContextLost, setIsContextLost] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
+  const [effectsReady, setEffectsReady] = useState(false);
 
-  // WebGL 显存崩溃防御与优雅降级
-  const handleCreated = ({ gl }: { gl: THREE.WebGLRenderer }) => {
-    const canvas = gl.domElement;
-    const onLost = (event: Event) => {
-      event.preventDefault();
-      console.warn('[LotusSeaCanvas] WebGL Context lost. Guarding and falling back.');
-      setIsContextLost(true);
-    };
-    const onRestored = () => {
-      console.info('[LotusSeaCanvas] WebGL Context restored.');
-      setIsContextLost(false);
-    };
-    canvas.addEventListener('webglcontextlost', onLost, false);
-    canvas.addEventListener('webglcontextrestored', onRestored, false);
-  };
+  // 模块四：错峰延迟挂载 EffectComposer，避开首帧着色器编译与主模型渲染洪峰
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setEffectsReady(true);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // WebGL 显存崩溃防御、着色器预热 (Shader Warmup) 与平滑淡入呈现
+  const handleCreated = useCallback(
+    ({ gl, scene, camera }: { gl: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.Camera }) => {
+      // 1. 着色器静默预热编译 (Shader Warmup)
+      try {
+        gl.compile(scene, camera);
+      } catch (err) {
+        console.warn('[LotusSeaCanvas] Shader warmup note:', err);
+      }
+
+      // 2. 预热完成后触发 1s 平滑淡入，彻底消除黑白闪
+      requestAnimationFrame(() => {
+        setCanvasReady(true);
+      });
+
+      // 3. WebGL 上下文丢失与恢复守护
+      const canvas = gl.domElement;
+      const onLost = (event: Event) => {
+        event.preventDefault();
+        console.warn('[LotusSeaCanvas] WebGL Context lost. Guarding and falling back.');
+        setIsContextLost(true);
+      };
+      const onRestored = () => {
+        console.info('[LotusSeaCanvas] WebGL Context restored.');
+        setIsContextLost(false);
+      };
+      canvas.addEventListener('webglcontextlost', onLost, false);
+      canvas.addEventListener('webglcontextrestored', onRestored, false);
+    },
+    []
+  );
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-      <Canvas
-        shadows={!isMobile}
-        camera={{
-          position: isMobile ? [0, 10.5, 22] : [0, 10, 18],
-          fov: isMobile ? 54 : 50,
-          near: 0.1,
-          far: 200,
-        }}
-        // 模块一：智能自适应 DPR 支持最高 2.0，彻底消除低清晰度拉伸发虚，与 Retina 视网膜屏达到点对点真高清
-        dpr={isMobile ? [1, 2] : [1, 2]}
-        frameloop={!isVisible ? 'demand' : 'always'}
-        // 模块一：关闭原生 MSAA，交由单通道 SMAA 接管，启用高性能模式
-        gl={{
-          powerPreference: "high-performance",
-          antialias: false,
-          precision: "highp",
-          alpha: true,
-          preserveDrawingBuffer: false,
-        }}
-        onCreated={handleCreated}
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        overflow: 'hidden',
+        backgroundColor: '#0a0a0a',
+        background: 'radial-gradient(ellipse at 50% 60%, #0d1a30 0%, #0a0a0a 75%, #050505 100%)',
+      }}
+    >
+      {/* 模块一：Canvas 平滑淡入包裹层 */}
+      <motion.div
         style={{ width: '100%', height: '100%' }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: canvasReady ? 1 : 0 }}
+        transition={{ duration: 1.0, ease: [0.16, 1, 0.3, 1] }}
       >
-        <Suspense fallback={null}>
-          <LampScene
-            isPlacementMode={isPlacementMode}
-            setIsPlacementMode={setIsPlacementMode}
-            isZoomed={isZoomed}
-            setIsZoomed={setIsZoomed}
-            lamps={lamps}
-            setLamps={setLamps}
-            currentUserId={currentUserId}
-            currentUserName={currentUserName}
-            currentUserRole={currentUserRole}
-            onPlaceLamp={onPlaceLamp}
-            onDedicate={onDedicate}
-            onLimitReached={onLimitReached}
-            cameraControlsRef={cameraControlsRef}
-            handlePray={handlePray}
-            isMobile={isMobile}
-          />
-
-          {/* 模块二：电影级低功耗后处理管线 (luminanceThreshold 提高至 0.92，杜绝文字自身发光散焦变糊) */}
-          <EffectComposer multisampling={0} enableNormalPass={false}>
-            <Bloom
-              mipmapBlur
-              intensity={isMobile ? 1.05 : 1.4}
-              luminanceThreshold={0.92}
-              luminanceSmoothing={0.2}
-              radius={isMobile ? 0.6 : 0.75}
-              levels={isMobile ? 5 : 8}
-              resolutionScale={isMobile ? Resolution.HALF : Resolution.FULL}
+        <Canvas
+          shadows={!isMobile}
+          camera={{
+            position: isMobile ? [0, 10.5, 22] : [0, 10, 18],
+            fov: isMobile ? 54 : 50,
+            near: 0.1,
+            far: 200,
+          }}
+          // 模块一：智能自适应 DPR 支持最高 2.0，彻底消除低清晰度拉伸发虚，与 Retina 视网膜屏达到点对点真高清
+          dpr={isMobile ? [1, 2] : [1, 2]}
+          frameloop={!isVisible ? 'demand' : 'always'}
+          // 模块一：关闭原生 MSAA，交由单通道 SMAA 接管，启用高性能模式
+          gl={{
+            powerPreference: 'high-performance',
+            antialias: false,
+            precision: 'highp',
+            alpha: true,
+            preserveDrawingBuffer: false,
+          }}
+          onCreated={handleCreated}
+          style={{ width: '100%', height: '100%' }}
+        >
+          <Suspense fallback={<LotusSceneLoader />}>
+            <LampScene
+              isPlacementMode={isPlacementMode}
+              setIsPlacementMode={setIsPlacementMode}
+              isZoomed={isZoomed}
+              setIsZoomed={setIsZoomed}
+              lamps={lamps}
+              setLamps={setLamps}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
+              currentUserRole={currentUserRole}
+              onPlaceLamp={onPlaceLamp}
+              onDedicate={onDedicate}
+              onLimitReached={onLimitReached}
+              cameraControlsRef={cameraControlsRef}
+              handlePray={handlePray}
+              isMobile={isMobile}
             />
-            {/* 模块一：轻量级形态学抗锯齿，彻底平滑连线与发光体边缘锯齿 */}
-            <SMAA />
-            {!isMobile && <Vignette eskil={false} offset={0.12} darkness={0.85} />}
-            {!isMobile && <Noise opacity={0.015} />}
-          </EffectComposer>
-        </Suspense>
-      </Canvas>
+
+            {/* 模块四：后期处理延迟挂载 (错开 500ms，彻底消除首屏卡死) */}
+            {effectsReady && (
+              <EffectComposer multisampling={0} enableNormalPass={false}>
+                <Bloom
+                  mipmapBlur
+                  intensity={isMobile ? 1.05 : 1.4}
+                  luminanceThreshold={0.92}
+                  luminanceSmoothing={0.2}
+                  radius={isMobile ? 0.6 : 0.75}
+                  levels={isMobile ? 5 : 8}
+                  resolutionScale={isMobile ? Resolution.HALF : Resolution.FULL}
+                />
+                {/* 模块一：轻量级形态学抗锯齿，彻底平滑连线与发光体边缘锯齿 */}
+                <SMAA />
+                {!isMobile && <Vignette eskil={false} offset={0.12} darkness={0.85} />}
+                {!isMobile && <Noise opacity={0.015} />}
+              </EffectComposer>
+            )}
+          </Suspense>
+        </Canvas>
+      </motion.div>
 
       {/* WebGL 显存崩溃守护备用图层 */}
       {isContextLost && (
@@ -1248,3 +1318,21 @@ const LotusSeaCanvas: React.FC<LotusSeaCanvasProps> = ({
 };
 
 export default LotusSeaCanvas;
+
+// ==================== 模块三：资源静态强制预加载 (Aggressive Preloading) ====================
+if (typeof window !== 'undefined') {
+  try {
+    // 异步预加载 Troika SDF 字体常用字符集，消除首屏文字闪烁
+    import('troika-three-text').then(({ preloadFont }) => {
+      if (typeof preloadFont === 'function') {
+        preloadFont(
+          {
+            characters: '愿平安吉祥福慧双增万事如意功德+1🙏0123456789同修学长姐理事学员',
+            sdfGlyphSize: 64,
+          },
+          () => {}
+        );
+      }
+    }).catch(() => {});
+  } catch {}
+}
